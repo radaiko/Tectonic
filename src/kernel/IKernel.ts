@@ -14,6 +14,44 @@ export interface Vec3 {
   readonly z: number
 }
 
+export interface Vec2 {
+  readonly x: number
+  readonly y: number
+}
+
+/**
+ * Rigid placement of a 2D sketch plane in world space. `xAxis` and `yAxis` are
+ * unit vectors; their cross product is the plane normal, which is also the
+ * direction an extrusion takes by default.
+ */
+export interface PlaneFrame {
+  readonly origin: Vec3
+  readonly xAxis: Vec3
+  readonly yAxis: Vec3
+}
+
+/** The world XY plane — the frame every operation falls back to. */
+export const WORLD_XY: PlaneFrame = {
+  origin: { x: 0, y: 0, z: 0 },
+  xAxis: { x: 1, y: 0, z: 0 },
+  yAxis: { x: 0, y: 1, z: 0 },
+}
+
+/**
+ * A closed planar region, given in the plane's local 2D coordinates: one outer
+ * loop plus any number of inner loops removed from it.
+ */
+export interface Profile {
+  readonly points: readonly Vec2[]
+  readonly holes?: readonly (readonly Vec2[])[]
+}
+
+/** Axis-aligned extent of a shape, in world space. */
+export interface BoundingBox {
+  readonly min: Vec3
+  readonly max: Vec3
+}
+
 export interface BoxParams {
   readonly width: number
   readonly height: number
@@ -22,16 +60,62 @@ export interface BoxParams {
   readonly center?: Vec3
 }
 
-/** A closed planar polygon, given in the plane's local 2D coordinates. */
-export interface Profile {
-  readonly points: readonly { readonly x: number; readonly y: number }[]
-}
+/** How a two-sided operation distributes its distance about the sketch plane. */
+export type ExtrudeSide = 'one-sided' | 'symmetric' | 'two-sided'
 
 export interface ExtrudeParams {
   readonly profile: Profile
   readonly distance: number
-  /** Extrusion direction. Defaults to +Z. */
+  /** Extrusion direction. Defaults to the plane normal, or +Z without a plane. */
   readonly direction?: Vec3
+  /** Placement of the profile in world space. Defaults to the world XY plane. */
+  readonly plane?: PlaneFrame
+  /** Taper applied along the sweep, in degrees. Positive widens the far end. */
+  readonly draftAngle?: number
+  readonly side?: ExtrudeSide
+  /** Second distance, taken opposite `direction`, for two-sided extrusions. */
+  readonly secondDistance?: number
+}
+
+/** Axis of revolution, expressed in the sketch plane's 2D coordinates. */
+export interface RevolveAxis {
+  readonly origin: Vec2
+  readonly direction: Vec2
+}
+
+export interface RevolveParams {
+  readonly profile: Profile
+  readonly axis: RevolveAxis
+  /** Sweep angle in degrees. 360 makes a full solid of revolution. */
+  readonly angle: number
+  readonly plane?: PlaneFrame
+  /** Splits the sweep evenly either side of the profile. */
+  readonly symmetric?: boolean
+}
+
+export type SweepOrientation = 'follow-path' | 'perpendicular'
+
+export interface SweepParams {
+  readonly profile: Profile
+  /** Path polyline in world space; needs at least two distinct points. */
+  readonly path: readonly Vec3[]
+  readonly plane?: PlaneFrame
+  readonly orientation?: SweepOrientation
+  /** Total twist about the path, in degrees. */
+  readonly twistAngle?: number
+}
+
+/** One cross-section of a loft: a profile plus the plane it sits on. */
+export interface LoftSection {
+  readonly profile: Profile
+  readonly plane?: PlaneFrame
+}
+
+export interface LoftParams {
+  readonly sections: readonly LoftSection[]
+  /** Guide curves in world space. The stub records them but does not follow them. */
+  readonly guides?: readonly (readonly Vec3[])[]
+  readonly closed?: boolean
 }
 
 export interface FilletParams {
@@ -42,8 +126,58 @@ export interface FilletParams {
 
 export interface ChamferParams {
   readonly distance: number
+  /** Second distance for a distance-distance chamfer. Defaults to `distance`. */
+  readonly secondDistance?: number
+  /** Angle in degrees for a distance-angle chamfer. */
+  readonly angle?: number
   /** Edge identifiers to chamfer. Empty means every edge of the shape. */
   readonly edgeIds?: readonly string[]
+}
+
+export interface ShellParams {
+  readonly thickness: number
+  /** Faces left open. Empty hollows the solid without opening it. */
+  readonly openFaceIds?: readonly string[]
+}
+
+export type HoleKind = 'simple' | 'countersink' | 'counterbore'
+
+export interface HoleParams {
+  /** Hole axis start, in world space — the point the hole is drilled from. */
+  readonly center: Vec3
+  /** Drilling direction. Defaults to -Z. */
+  readonly direction?: Vec3
+  readonly diameter: number
+  readonly depth: number
+  readonly kind?: HoleKind
+  /** Head diameter for countersink and counterbore holes. */
+  readonly headDiameter?: number
+  /** Head depth for counterbore holes; sink height for countersinks. */
+  readonly headDepth?: number
+}
+
+export interface DraftParams {
+  /** Pull direction the draft opens towards. Defaults to +Z. */
+  readonly pullDirection?: Vec3
+  readonly angle: number
+  /** Distance along the pull direction where the section is left unchanged. */
+  readonly neutralOffset?: number
+  /** Faces to draft. Empty drafts the whole shape. */
+  readonly faceIds?: readonly string[]
+}
+
+export interface TransformParams {
+  readonly translate?: Vec3
+  readonly rotate?: {
+    readonly axis: Vec3
+    readonly origin?: Vec3
+    /** Rotation in degrees. */
+    readonly angle: number
+  }
+  /** Uniform or per-axis scale. */
+  readonly scale?: number | Vec3
+  /** Point the scale is applied about. Defaults to the origin. */
+  readonly scaleOrigin?: Vec3
 }
 
 export interface TessellationParams {
@@ -67,6 +201,9 @@ export interface IKernel {
 
   createBox(params: BoxParams): Promise<ShapeHandle>
   extrude(params: ExtrudeParams): Promise<ShapeHandle>
+  revolve(params: RevolveParams): Promise<ShapeHandle>
+  sweep(params: SweepParams): Promise<ShapeHandle>
+  loft(params: LoftParams): Promise<ShapeHandle>
 
   booleanUnion(a: ShapeHandle, b: ShapeHandle): Promise<ShapeHandle>
   booleanSubtract(target: ShapeHandle, tool: ShapeHandle): Promise<ShapeHandle>
@@ -74,6 +211,18 @@ export interface IKernel {
 
   fillet(shape: ShapeHandle, params: FilletParams): Promise<ShapeHandle>
   chamfer(shape: ShapeHandle, params: ChamferParams): Promise<ShapeHandle>
+  shell(shape: ShapeHandle, params: ShellParams): Promise<ShapeHandle>
+  hole(shape: ShapeHandle, params: HoleParams): Promise<ShapeHandle>
+  draft(shape: ShapeHandle, params: DraftParams): Promise<ShapeHandle>
+
+  /** Rigid (or scaled) placement of a copy of `shape`. */
+  transform(shape: ShapeHandle, params: TransformParams): Promise<ShapeHandle>
+  /** Reflects a copy of `shape` through a plane, keeping the surface outward. */
+  mirror(shape: ShapeHandle, plane: PlaneFrame): Promise<ShapeHandle>
+  /** Independent duplicate of `shape`. */
+  copy(shape: ShapeHandle): Promise<ShapeHandle>
+
+  boundingBox(shape: ShapeHandle): Promise<BoundingBox>
 
   /** Converts a shape into renderable triangles. */
   triangulate(shape: ShapeHandle, params?: TessellationParams): Promise<MeshData>
