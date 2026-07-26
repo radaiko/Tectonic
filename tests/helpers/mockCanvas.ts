@@ -94,3 +94,35 @@ export class CanvasRecorder {
     return this.callsTo('fillText').map((call) => String(call.args[0]))
   }
 }
+
+const recorders = new WeakMap<HTMLCanvasElement, CanvasRecorder>()
+let mostRecent: CanvasRecorder | null = null
+
+/**
+ * Teaches jsdom's `<canvas>` to hand out a recording 2D context, so components
+ * that draw can be rendered in tests (and stop logging "not implemented").
+ * One recorder per canvas element, so repeated renders accumulate on it.
+ */
+export function installCanvas2dMock(): void {
+  function getContext(this: HTMLCanvasElement, kind: string): unknown {
+    if (kind !== '2d') return null
+    let recorder = recorders.get(this)
+    if (!recorder) {
+      recorder = new CanvasRecorder()
+      recorders.set(this, recorder)
+    }
+    mostRecent = recorder
+    return recorder.context
+  }
+
+  HTMLCanvasElement.prototype.getContext = getContext as unknown as typeof
+    HTMLCanvasElement.prototype.getContext
+}
+
+export function canvasRecorderFor(canvas: HTMLCanvasElement): CanvasRecorder | undefined {
+  return recorders.get(canvas)
+}
+
+export function latestCanvasRecorder(): CanvasRecorder | null {
+  return mostRecent
+}

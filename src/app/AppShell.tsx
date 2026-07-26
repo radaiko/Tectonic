@@ -42,9 +42,11 @@ export function AppShell({ kernel }: AppShellProps): React.ReactElement {
     }
   }, [])
 
-  const handleSave = useCallback(() => {
-    if (document) saveFile(document)
-  }, [document])
+  // The editor hands back the document with its live sketch folded in; the
+  // in-memory copy is deliberately left alone so editing state survives a save.
+  const handleSave = useCallback((edited: TectonicDocument) => {
+    saveFile(edited)
+  }, [])
 
   const handleClose = useCallback(() => {
     setDocument(null)

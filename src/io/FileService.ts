@@ -56,8 +56,18 @@ export function validateDocument(value: unknown): TectonicDocument {
   if (!Array.isArray(candidate.features)) {
     throw new DocumentParseError('Document is missing a "features" array')
   }
+  if (candidate.sketch !== undefined && !isSketch(candidate.sketch)) {
+    throw new DocumentParseError('Document "sketch" is not a sketch')
+  }
 
   return candidate as unknown as TectonicDocument
+}
+
+/** A sketch is recognised by its two collections; entity shapes are checked on load. */
+function isSketch(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const candidate = value as Record<string, unknown>
+  return Array.isArray(candidate.entities) && Array.isArray(candidate.constraints)
 }
 
 /** Reads and parses a user-selected .tectonic file. */

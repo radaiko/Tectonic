@@ -1,0 +1,215 @@
+.sketch {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 236px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface-base);
+}
+
+/* Tool palette ------------------------------------------------------------ */
+
+.sketch__tools {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+
+.sketch__tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.sketch__tool:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.sketch__tool--active {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+
+/* Canvas ------------------------------------------------------------------ */
+
+.sketch__frame {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sketch__canvas {
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.sketch__dimension-input {
+  position: absolute;
+  width: 76px;
+  padding: 1px 4px;
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--text-primary);
+  text-align: center;
+  background: var(--surface-raised);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  transform: translate(-50%, -50%);
+}
+
+.sketch__fit {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sketch__fit:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+/* Panels ------------------------------------------------------------------ */
+
+.sketch__panels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.7rem;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+
+.sketch__panel-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.sketch__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.12rem 0;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.sketch__option input[type='number'],
+.sketch__option select {
+  width: 82px;
+  padding: 0.1rem 0.25rem;
+  font: inherit;
+  font-size: 0.74rem;
+  color: var(--text-primary);
+  background: var(--surface-base);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+}
+
+.sketch__properties {
+  margin: 0;
+  font-size: 0.76rem;
+}
+
+.sketch__properties dt {
+  color: var(--text-muted);
+}
+
+.sketch__properties dd {
+  margin: 0 0 0.25rem;
+  color: var(--text-secondary);
+}
+
+.sketch__property {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sketch__empty {
+  margin: 0;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.sketch__constraints {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sketch__constraint {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) 1.1rem;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.12rem 0;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.sketch__constraint-delete {
+  padding: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.sketch__constraint-delete:hover {
+  color: var(--danger);
+}
+
+/* Status bar -------------------------------------------------------------- */
+
+.sketch__status {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 1.1rem;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+
+.sketch__message {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}

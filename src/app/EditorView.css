@@ -28,8 +28,21 @@
   color: var(--text-muted);
 }
 
+.editor__modified {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .editor__spacer {
   flex: 1;
+}
+
+.editor__surfaces {
+  display: flex;
+  gap: 0.25rem;
+  margin-right: 0.5rem;
 }
 
 .editor__body {

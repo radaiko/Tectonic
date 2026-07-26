@@ -1,4 +1,6 @@
 import type { MeshData } from './MeshData'
+import type { SketchModelJSON } from '../sketch/domain/SketchModel'
+import { SketchModel } from '../sketch/domain/SketchModel'
 
 /** Format version of the .tectonic container. Bump on breaking schema changes. */
 export const TECTONIC_FORMAT_VERSION = 1
@@ -47,6 +49,8 @@ export interface TectonicDocument {
   readonly metadata: DocumentMetadata
   readonly parts: Part[]
   readonly features: Feature[]
+  /** The document's 2D sketch. Optional so pre-M1 files still open. */
+  readonly sketch?: SketchModelJSON
 }
 
 export interface NewDocumentOptions {
@@ -68,6 +72,33 @@ export function createDocument(options: NewDocumentOptions = {}): TectonicDocume
     },
     parts: [],
     features: [],
+    sketch: createBlankSketch().toJSON(),
+  }
+}
+
+/** The sketch a brand new document opens on: empty, on the XY plane. */
+export function createBlankSketch(name = 'Sketch 1'): SketchModel {
+  return new SketchModel({ name, plane: 'XY' })
+}
+
+/**
+ * The document's sketch as a live model. Documents written before sketches
+ * existed simply get a blank one.
+ */
+export function documentSketch(document: TectonicDocument): SketchModel {
+  return document.sketch ? SketchModel.fromJSON(document.sketch) : createBlankSketch()
+}
+
+/** The document with the sketch as it currently stands, restamped as modified. */
+export function withSketch(
+  document: TectonicDocument,
+  sketch: SketchModel,
+  now?: string,
+): TectonicDocument {
+  return {
+    ...document,
+    sketch: sketch.toJSON(),
+    metadata: { ...document.metadata, modified: now ?? new Date().toISOString() },
   }
 }
 
