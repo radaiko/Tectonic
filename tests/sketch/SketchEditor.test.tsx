@@ -78,6 +78,12 @@ describe('toolbar', () => {
     expect((screen.getByLabelText('Mode') as HTMLSelectElement).value).toBe('circular')
   })
 
+  it('starts on the tool it was given', () => {
+    render(<SketchEditor model={emptySketch()} initialTool="line" />)
+
+    expect(screen.getByRole('button', { name: 'Line' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('draws new geometry as construction when the toggle is on', async () => {
     const model = emptySketch()
     render(<SketchEditor model={model} />)
@@ -138,6 +144,16 @@ describe('selection', () => {
     expect(screen.getByText('Line')).toBeDefined()
     expect(screen.getByText('Length')).toBeDefined()
     expect(screen.getByText('100')).toBeDefined()
+  })
+
+  it('marks a construction entity in the properties panel', () => {
+    const model = emptySketch()
+    buildLine(model, { x: -50, y: 0 }, { x: 50, y: 0 }, { isConstruction: true })
+    render(<SketchEditor model={model} />)
+
+    click({ x: 0, y: 0 })
+
+    expect(screen.getByText('Line (construction)')).toBeDefined()
   })
 
   it('counts a multiple selection', () => {
@@ -397,6 +413,19 @@ describe('constraints and dimensions', () => {
     expect([...model.constraints.values()][0]?.value).toBe(100)
   })
 
+  it('rejects an empty value', () => {
+    const model = sketchWithLengthDimension()
+    render(<SketchEditor model={model} />)
+    fireEvent.pointerDown(canvas(), { clientX: CENTER_X, clientY: CENTER_Y - 18, button: 0 })
+
+    const input = screen.getByLabelText('Dimension value')
+    fireEvent.change(input, { target: { value: '' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(screen.getByText('"" is not a number')).toBeDefined()
+    expect([...model.constraints.values()][0]?.value).toBe(100)
+  })
+
   it('puts back a value the sketch cannot satisfy', () => {
     const model = emptySketch()
     const line = buildLine(model, { x: -50, y: 0 }, { x: 50, y: 0 })
@@ -408,18 +437,23 @@ describe('constraints and dimensions', () => {
     fireEvent.change(input, { target: { value: '-40' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
-    expect(screen.getByText('That value cannot be satisfied')).toBeDefined()
     expect([...model.constraints.values()][0]?.value).toBe(100)
+    // The status bar shows the solver diagnostic in preference to the editor's
+    // own message, so the rejection surfaces as the over-constrained report.
+    expect(screen.getByText(/over-constrained/i)).toBeDefined()
   })
 
-  it('reports the degrees of freedom left in the sketch', () => {
+  it('reports the degrees of freedom left in the sketch', async () => {
     const model = emptySketch()
     render(<SketchEditor model={model} />)
     expect(screen.getByText('Fully constrained')).toBeDefined()
 
-    fireEvent.keyDown(window, { key: 'Escape' })
-    buildLine(model, { x: 0, y: 0 }, { x: 10, y: 0 })
-    fireEvent.pointerMove(canvas(), client({ x: 200, y: 200 }))
+    // The readout follows a solve, and a solve only runs when an edit comes
+    // back through a tool — so draw the line instead of mutating the model.
+    await userEvent.click(screen.getByRole('button', { name: 'Line' }))
+    fireEvent.pointerDown(canvas(), { ...client({ x: 0, y: 0 }), button: 0 })
+    fireEvent.pointerMove(canvas(), client({ x: 10, y: 0 }))
+    fireEvent.pointerUp(canvas(), { ...client({ x: 10, y: 0 }), button: 0 })
 
     expect(screen.getByText('4 DOF')).toBeDefined()
   })
