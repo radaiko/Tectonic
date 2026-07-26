@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { EditorView } from '../../src/app/EditorView'
 import { createBody, createDocument, createPart } from '../../src/domain/Document'
 import type { TectonicDocument } from '../../src/domain/Document'
+import { FeatureType } from '../../src/features/domain/FeatureType'
 
 // The viewport needs a WebGL context jsdom cannot supply, so it is stubbed out;
 // its rendering is verified manually in the browser.
@@ -29,21 +30,30 @@ function documentWithGeometry(): TectonicDocument {
       {
         id: 'feature-1',
         name: 'Extrude 1',
-        type: 'extrude',
-        suppressed: false,
+        featureType: FeatureType.Extrude,
+        sketchId: null,
         parameters: { distance: 10 },
+        status: 'active',
+        errorMessage: null,
+        parentFeatureIds: [],
+        childFeatureIds: [],
       },
     ],
   }
 }
 
 describe('EditorView', () => {
-  it('shows the document name and the feature tree', () => {
+  it('shows the document name and the feature tree', async () => {
     render(<EditorView document={documentWithGeometry()} onSave={vi.fn()} onClose={vi.fn()} />)
 
+    // The sketch surface is the default, and its panel lists parts and bodies.
     expect(screen.getByText('Bracket')).toBeDefined()
     expect(screen.getByText('Part 1')).toBeDefined()
     expect(screen.getByText('Box 1')).toBeDefined()
+
+    // The feature tree replaces that panel once the 3D surface is active.
+    await userEvent.click(screen.getByRole('button', { name: '3D' }))
+
     expect(screen.getByText('Extrude 1')).toBeDefined()
   })
 
