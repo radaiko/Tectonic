@@ -1,0 +1,99 @@
+.editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  background: var(--surface-base);
+}
+
+.editor__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+
+.editor__brand {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.editor__doc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.editor__spacer {
+  flex: 1;
+}
+
+.editor__body {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.editor__panel {
+  padding: 0.9rem;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+
+.editor__panel-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.editor__tree,
+.editor__tree ul {
+  margin: 0;
+  padding-left: 0.85rem;
+  list-style: none;
+}
+
+.editor__tree {
+  padding-left: 0;
+}
+
+.editor__node {
+  display: block;
+  padding: 0.2rem 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.editor__node--part {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.editor__empty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.editor__viewport {
+  min-width: 0;
+  min-height: 0;
+}
+
+.editor__status {
+  display: flex;
+  gap: 1.25rem;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  background: var(--surface-raised);
+}
