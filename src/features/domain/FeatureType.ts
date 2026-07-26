@@ -23,6 +23,13 @@ export const FeatureType = {
   Combine: 'CombineFeature',
   Split: 'SplitFeature',
   DirectEdit: 'DirectEditFeature',
+  BaseFlange: 'BaseFlangeFeature',
+  EdgeFlange: 'EdgeFlangeFeature',
+  MiterFlange: 'MiterFlangeFeature',
+  Hem: 'HemFeature',
+  Jog: 'JogFeature',
+  Unfold: 'UnfoldFeature',
+  Refold: 'RefoldFeature',
 } as const
 
 export type FeatureType = (typeof FeatureType)[keyof typeof FeatureType]
@@ -67,6 +74,7 @@ export function isSketchFeature(type: FeatureType): boolean {
     case FeatureType.CutLoft:
     case FeatureType.Rib:
     case FeatureType.Hole:
+    case FeatureType.BaseFlange:
       return true
     default:
       return false
@@ -94,6 +102,28 @@ const LABELS: Record<FeatureType, string> = {
   [FeatureType.Combine]: 'Combine',
   [FeatureType.Split]: 'Split',
   [FeatureType.DirectEdit]: 'Direct Edit',
+  [FeatureType.BaseFlange]: 'Base Flange',
+  [FeatureType.EdgeFlange]: 'Edge Flange',
+  [FeatureType.MiterFlange]: 'Mitre Flange',
+  [FeatureType.Hem]: 'Hem',
+  [FeatureType.Jog]: 'Jog',
+  [FeatureType.Unfold]: 'Unfold',
+  [FeatureType.Refold]: 'Refold',
+}
+
+const SHEET_METAL_TYPES: readonly FeatureType[] = [
+  FeatureType.BaseFlange,
+  FeatureType.EdgeFlange,
+  FeatureType.MiterFlange,
+  FeatureType.Hem,
+  FeatureType.Jog,
+  FeatureType.Unfold,
+  FeatureType.Refold,
+]
+
+/** Features that belong to the sheet metal environment rather than the solid one. */
+export function isSheetMetalFeature(type: FeatureType): boolean {
+  return SHEET_METAL_TYPES.includes(type)
 }
 
 /** Human-readable name used for default feature names and tree rows. */
