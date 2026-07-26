@@ -30,6 +30,21 @@ export const FeatureType = {
   Jog: 'JogFeature',
   Unfold: 'UnfoldFeature',
   Refold: 'RefoldFeature',
+  ExtrudeSurface: 'ExtrudeSurfaceFeature',
+  RevolveSurface: 'RevolveSurfaceFeature',
+  SweepSurface: 'SweepSurfaceFeature',
+  LoftSurface: 'LoftSurfaceFeature',
+  BoundarySurface: 'BoundarySurfaceFeature',
+  RuledSurface: 'RuledSurfaceFeature',
+  PatchSurface: 'PatchSurfaceFeature',
+  OffsetSurface: 'OffsetSurfaceFeature',
+  ExtendSurface: 'ExtendSurfaceFeature',
+  TrimSurface: 'TrimSurfaceFeature',
+  UntrimSurface: 'UntrimSurfaceFeature',
+  KnitSurface: 'KnitSurfaceFeature',
+  SplitSurface: 'SplitSurfaceFeature',
+  ThickenSurface: 'ThickenSurfaceFeature',
+  StitchSurface: 'StitchSurfaceFeature',
 } as const
 
 export type FeatureType = (typeof FeatureType)[keyof typeof FeatureType]
@@ -75,6 +90,10 @@ export function isSketchFeature(type: FeatureType): boolean {
     case FeatureType.Rib:
     case FeatureType.Hole:
     case FeatureType.BaseFlange:
+    case FeatureType.ExtrudeSurface:
+    case FeatureType.RevolveSurface:
+    case FeatureType.SweepSurface:
+    case FeatureType.PatchSurface:
       return true
     default:
       return false
@@ -109,6 +128,21 @@ const LABELS: Record<FeatureType, string> = {
   [FeatureType.Jog]: 'Jog',
   [FeatureType.Unfold]: 'Unfold',
   [FeatureType.Refold]: 'Refold',
+  [FeatureType.ExtrudeSurface]: 'Extruded Surface',
+  [FeatureType.RevolveSurface]: 'Revolved Surface',
+  [FeatureType.SweepSurface]: 'Swept Surface',
+  [FeatureType.LoftSurface]: 'Lofted Surface',
+  [FeatureType.BoundarySurface]: 'Boundary Surface',
+  [FeatureType.RuledSurface]: 'Ruled Surface',
+  [FeatureType.PatchSurface]: 'Patch',
+  [FeatureType.OffsetSurface]: 'Offset Surface',
+  [FeatureType.ExtendSurface]: 'Extend Surface',
+  [FeatureType.TrimSurface]: 'Trim Surface',
+  [FeatureType.UntrimSurface]: 'Untrim Surface',
+  [FeatureType.KnitSurface]: 'Knit Surface',
+  [FeatureType.SplitSurface]: 'Split Surface',
+  [FeatureType.ThickenSurface]: 'Thicken',
+  [FeatureType.StitchSurface]: 'Stitch',
 }
 
 const SHEET_METAL_TYPES: readonly FeatureType[] = [
@@ -124,6 +158,37 @@ const SHEET_METAL_TYPES: readonly FeatureType[] = [
 /** Features that belong to the sheet metal environment rather than the solid one. */
 export function isSheetMetalFeature(type: FeatureType): boolean {
   return SHEET_METAL_TYPES.includes(type)
+}
+
+const SURFACE_TYPES: readonly FeatureType[] = [
+  FeatureType.ExtrudeSurface,
+  FeatureType.RevolveSurface,
+  FeatureType.SweepSurface,
+  FeatureType.LoftSurface,
+  FeatureType.BoundarySurface,
+  FeatureType.RuledSurface,
+  FeatureType.PatchSurface,
+  FeatureType.OffsetSurface,
+  FeatureType.ExtendSurface,
+  FeatureType.TrimSurface,
+  FeatureType.UntrimSurface,
+  FeatureType.KnitSurface,
+  FeatureType.SplitSurface,
+  FeatureType.ThickenSurface,
+  FeatureType.StitchSurface,
+]
+
+/** Features that belong to the surface environment — see `surface/`. */
+export function isSurfaceFeature(type: FeatureType): boolean {
+  return SURFACE_TYPES.includes(type)
+}
+
+/**
+ * Surface features that leave a solid behind rather than a sheet. They are the
+ * bridge out of the surface environment, so a solid feature may depend on one.
+ */
+export function producesSolid(type: FeatureType): boolean {
+  return type === FeatureType.ThickenSurface || type === FeatureType.StitchSurface
 }
 
 /** Human-readable name used for default feature names and tree rows. */

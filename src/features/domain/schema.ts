@@ -7,6 +7,16 @@ import {
   LENGTH_MODES,
   RELIEF_TYPES,
 } from '../../sheetmetal/types'
+import {
+  EXTEND_MODES,
+  SURFACE_SWEEP_ORIENTATIONS,
+  THICKEN_SIDES,
+  TRIM_KEEPS,
+} from '../../surface/types'
+
+/** What a surface trim or split cuts against — see `surface/SurfaceEditing`. */
+export const TRIM_BOUNDARY_KINDS = ['plane', 'curve', 'surface'] as const
+export type TrimBoundaryKind = (typeof TRIM_BOUNDARY_KINDS)[number]
 
 /** How a solid feature combines with what is already modelled. */
 export const BOOLEAN_OPERATIONS = ['new-body', 'join', 'cut', 'intersect'] as const
@@ -90,6 +100,17 @@ const SWEEP_FIELDS: readonly ParameterField[] = [
   choice('orientation', 'Orientation', SWEEP_ORIENTATIONS),
   num('twistAngle', 'Twist', { unit: 'deg', step: 5 }),
   BOOLEAN_FIELD,
+]
+
+/** Trim and split ask the same question: what cuts, and which side survives. */
+const TRIM_FIELDS: readonly ParameterField[] = [
+  choice('boundaryKind', 'Cut with', TRIM_BOUNDARY_KINDS),
+  choice('plane', 'Cutting plane', SKETCH_PLANES),
+  num('offset', 'Plane offset', { unit: 'mm', step: 1 }),
+  { key: 'curveSketchId', label: 'Trim curve sketch', kind: 'text' },
+  { key: 'toolSurfaceBodyId', label: 'Trim surface', kind: 'text' },
+  choice('keep', 'Keep', TRIM_KEEPS),
+  { key: 'surfaceBodyIds', label: 'Surfaces', kind: 'text' },
 ]
 
 const LOFT_FIELDS: readonly ParameterField[] = [
@@ -226,6 +247,68 @@ const FIELDS: Record<FeatureType, readonly ParameterField[]> = {
   ],
   [FeatureType.Unfold]: [{ key: 'targetBodyId', label: 'Body', kind: 'text' }],
   [FeatureType.Refold]: [{ key: 'targetBodyId', label: 'Body', kind: 'text' }],
+  [FeatureType.ExtrudeSurface]: [
+    num('distance', 'Distance', { unit: 'mm', min: 0, step: 1 }),
+    flag('symmetric', 'Symmetric'),
+    flag('reverse', 'Reverse'),
+    num('offset', 'Plane offset', { unit: 'mm', step: 1 }),
+  ],
+  [FeatureType.RevolveSurface]: [
+    num('angle', 'Angle', { unit: 'deg', step: 5 }),
+    flag('symmetric', 'Symmetric'),
+    num('segments', 'Segments', { min: 3, step: 1 }),
+  ],
+  [FeatureType.SweepSurface]: [
+    { key: 'pathSketchId', label: 'Path sketch', kind: 'text' },
+    choice('orientation', 'Orientation', SURFACE_SWEEP_ORIENTATIONS),
+    num('twistAngle', 'Twist', { unit: 'deg', step: 5 }),
+  ],
+  [FeatureType.LoftSurface]: [
+    { key: 'sectionSketchIds', label: 'Sections', kind: 'text' },
+    flag('closed', 'Closed loop'),
+    num('samples', 'Samples', { min: 0, step: 1 }),
+  ],
+  [FeatureType.BoundarySurface]: [
+    { key: 'curveSketchIds', label: 'Boundary curves', kind: 'text' },
+    num('rows', 'Rows', { min: 2, step: 1 }),
+    num('columns', 'Columns', { min: 2, step: 1 }),
+  ],
+  [FeatureType.RuledSurface]: [
+    { key: 'curveSketchIds', label: 'Curves', kind: 'text' },
+    num('samples', 'Samples', { min: 0, step: 1 }),
+  ],
+  [FeatureType.PatchSurface]: [
+    { key: 'curveSketchIds', label: 'Boundary curves', kind: 'text' },
+  ],
+  [FeatureType.OffsetSurface]: [
+    num('distance', 'Distance', { unit: 'mm', step: 0.5 }),
+    { key: 'surfaceBodyIds', label: 'Surfaces', kind: 'text' },
+  ],
+  [FeatureType.ExtendSurface]: [
+    choice('mode', 'Extend to', EXTEND_MODES),
+    num('distance', 'Distance', { unit: 'mm', min: 0, step: 1 }),
+    choice('plane', 'Limit plane', SKETCH_PLANES),
+    num('offset', 'Plane offset', { unit: 'mm', step: 1 }),
+    num('boundaryIndex', 'Boundary', { step: 1 }),
+    { key: 'surfaceBodyIds', label: 'Surfaces', kind: 'text' },
+  ],
+  [FeatureType.TrimSurface]: TRIM_FIELDS,
+  [FeatureType.UntrimSurface]: [{ key: 'surfaceBodyIds', label: 'Surfaces', kind: 'text' }],
+  [FeatureType.KnitSurface]: [
+    num('tolerance', 'Tolerance', { unit: 'mm', min: 0, step: 0.01 }),
+    { key: 'surfaceBodyIds', label: 'Surfaces', kind: 'text' },
+  ],
+  [FeatureType.SplitSurface]: TRIM_FIELDS,
+  [FeatureType.ThickenSurface]: [
+    num('thickness', 'Thickness', { unit: 'mm', min: 0, step: 0.5 }),
+    choice('side', 'Direction', THICKEN_SIDES),
+    { key: 'surfaceBodyIds', label: 'Surfaces', kind: 'text' },
+  ],
+  [FeatureType.StitchSurface]: [
+    num('tolerance', 'Tolerance', { unit: 'mm', min: 0, step: 0.01 }),
+    flag('requireClosed', 'Must be watertight'),
+    { key: 'surfaceBodyIds', label: 'Surfaces', kind: 'text' },
+  ],
 }
 
 /** The editable parameters of a feature kind, in display order. */
@@ -276,6 +359,16 @@ const LOFT_DEFAULTS: FeatureParameters = {
   startCondition: 'normal',
   endCondition: 'normal',
   closed: false,
+}
+
+const TRIM_DEFAULTS: FeatureParameters = {
+  boundaryKind: 'plane',
+  plane: 'XY',
+  offset: 0,
+  curveSketchId: '',
+  toolSurfaceBodyId: '',
+  keep: 'front',
+  surfaceBodyIds: [],
 }
 
 const DEFAULTS: Record<FeatureType, FeatureParameters> = {
@@ -425,6 +518,46 @@ const DEFAULTS: Record<FeatureType, FeatureParameters> = {
   },
   [FeatureType.Unfold]: { targetBodyId: '' },
   [FeatureType.Refold]: { targetBodyId: '' },
+  [FeatureType.ExtrudeSurface]: {
+    distance: 25,
+    symmetric: false,
+    reverse: false,
+    offset: 0,
+    profileEntityIds: [],
+  },
+  [FeatureType.RevolveSurface]: {
+    angle: 360,
+    symmetric: false,
+    segments: 0,
+    axisOrigin: { x: 0, y: 0, z: 0 },
+    axisDirection: { x: 0, y: 1, z: 0 },
+    profileEntityIds: [],
+  },
+  [FeatureType.SweepSurface]: {
+    pathSketchId: '',
+    orientation: 'follow-path',
+    twistAngle: 0,
+    profileEntityIds: [],
+  },
+  [FeatureType.LoftSurface]: { sectionSketchIds: [], closed: false, samples: 0 },
+  [FeatureType.BoundarySurface]: { curveSketchIds: [], rows: 0, columns: 0 },
+  [FeatureType.RuledSurface]: { curveSketchIds: [], samples: 0 },
+  [FeatureType.PatchSurface]: { curveSketchIds: [], profileEntityIds: [] },
+  [FeatureType.OffsetSurface]: { distance: 5, surfaceBodyIds: [] },
+  [FeatureType.ExtendSurface]: {
+    mode: 'distance',
+    distance: 10,
+    plane: 'XY',
+    offset: 0,
+    boundaryIndex: -1,
+    surfaceBodyIds: [],
+  },
+  [FeatureType.TrimSurface]: TRIM_DEFAULTS,
+  [FeatureType.UntrimSurface]: { surfaceBodyIds: [] },
+  [FeatureType.KnitSurface]: { tolerance: 0, surfaceBodyIds: [] },
+  [FeatureType.SplitSurface]: TRIM_DEFAULTS,
+  [FeatureType.ThickenSurface]: { thickness: 2, side: 'normal', surfaceBodyIds: [] },
+  [FeatureType.StitchSurface]: { tolerance: 0, requireClosed: false, surfaceBodyIds: [] },
 }
 
 /** The parameter set a freshly created feature of this kind starts with. */

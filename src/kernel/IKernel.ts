@@ -238,6 +238,12 @@ export interface IKernel {
   init(): Promise<void>
 
   createBox(params: BoxParams): Promise<ShapeHandle>
+  /**
+   * Adopts an existing triangle mesh as a shape. This is how geometry that was
+   * not modelled here enters the kernel — an imported file, or a surface body
+   * built by `surface/` — so it can be tessellated and combined like any other.
+   */
+  createFromMesh(mesh: MeshData): Promise<ShapeHandle>
   extrude(params: ExtrudeParams): Promise<ShapeHandle>
   revolve(params: RevolveParams): Promise<ShapeHandle>
   sweep(params: SweepParams): Promise<ShapeHandle>

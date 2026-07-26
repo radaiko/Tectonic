@@ -1,14 +1,28 @@
 import type { IKernel, ShapeHandle } from '../../kernel/IKernel'
+import type { FoldUnfold } from '../../sheetmetal/FoldUnfold'
 import type { SketchModel } from '../../sketch/domain/SketchModel'
+import type { SurfaceBody } from '../../surface/types'
 import type { Feature } from '../domain/Feature'
 
-/** A solid in the working set, with the kernel handle that currently backs it. */
+/**
+ * A body in the working set, with the kernel handle that currently backs it.
+ *
+ * Most entries are plain solids. The two optional fields carry the extra model an
+ * environment needs alongside the geometry: a sheet metal body keeps its fold
+ * model so later flanges can rebuild it, and a surface body keeps its sheet so it
+ * can be trimmed, knitted and eventually thickened. Both are set only by their own
+ * environment's operations and are cleared when a body leaves it.
+ */
 export interface Solid {
   readonly id: string
   name: string
   shape: ShapeHandle
   /** The feature that last wrote to this solid — drives viewport highlighting. */
   featureId: string
+  /** Set while this body is a sheet metal part — see `sheetmetal/`. */
+  sheetMetal?: FoldUnfold | undefined
+  /** Set while this body is an open surface sheet — see `surface/`. */
+  surface?: SurfaceBody | undefined
 }
 
 /**

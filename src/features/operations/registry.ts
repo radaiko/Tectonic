@@ -1,3 +1,29 @@
+import {
+  baseFlangeOperation,
+  edgeFlangeOperation,
+  hemOperation,
+  jogOperation,
+  miterFlangeOperation,
+  refoldOperation,
+  unfoldOperation,
+} from '../../sheetmetal/operations'
+import {
+  boundarySurfaceOperation,
+  extendSurfaceOperation,
+  extrudeSurfaceOperation,
+  knitSurfaceOperation,
+  loftSurfaceOperation,
+  offsetSurfaceOperation,
+  patchSurfaceOperation,
+  revolveSurfaceOperation,
+  ruledSurfaceOperation,
+  splitSurfaceOperation,
+  stitchSurfaceOperation,
+  sweepSurfaceOperation,
+  thickenSurfaceOperation,
+  trimSurfaceOperation,
+  untrimSurfaceOperation,
+} from '../../surface/SurfaceFeature'
 import { FeatureType } from '../domain/FeatureType'
 import { chamferOperation } from './ChamferOperation'
 import { combineOperation } from './CombineOperation'
@@ -44,6 +70,28 @@ const OPERATIONS: Record<FeatureType, FeatureOperation> = {
   [FeatureType.Combine]: combineOperation,
   [FeatureType.Split]: splitOperation,
   [FeatureType.DirectEdit]: directEditOperation,
+  [FeatureType.BaseFlange]: baseFlangeOperation,
+  [FeatureType.EdgeFlange]: edgeFlangeOperation,
+  [FeatureType.MiterFlange]: miterFlangeOperation,
+  [FeatureType.Hem]: hemOperation,
+  [FeatureType.Jog]: jogOperation,
+  [FeatureType.Unfold]: unfoldOperation,
+  [FeatureType.Refold]: refoldOperation,
+  [FeatureType.ExtrudeSurface]: extrudeSurfaceOperation,
+  [FeatureType.RevolveSurface]: revolveSurfaceOperation,
+  [FeatureType.SweepSurface]: sweepSurfaceOperation,
+  [FeatureType.LoftSurface]: loftSurfaceOperation,
+  [FeatureType.BoundarySurface]: boundarySurfaceOperation,
+  [FeatureType.RuledSurface]: ruledSurfaceOperation,
+  [FeatureType.PatchSurface]: patchSurfaceOperation,
+  [FeatureType.OffsetSurface]: offsetSurfaceOperation,
+  [FeatureType.ExtendSurface]: extendSurfaceOperation,
+  [FeatureType.TrimSurface]: trimSurfaceOperation,
+  [FeatureType.UntrimSurface]: untrimSurfaceOperation,
+  [FeatureType.KnitSurface]: knitSurfaceOperation,
+  [FeatureType.SplitSurface]: splitSurfaceOperation,
+  [FeatureType.ThickenSurface]: thickenSurfaceOperation,
+  [FeatureType.StitchSurface]: stitchSurfaceOperation,
 }
 
 export function featureOperation(type: FeatureType): FeatureOperation {

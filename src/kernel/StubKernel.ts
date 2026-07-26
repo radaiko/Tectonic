@@ -66,6 +66,18 @@ export class StubKernel implements IKernel {
     return this.#register(geometry)
   }
 
+  async createFromMesh(mesh: MeshData): Promise<ShapeHandle> {
+    if (mesh.indices.length < 3 || mesh.positions.length < 9) {
+      throw new KernelError('A mesh needs at least one triangle', 'createFromMesh')
+    }
+    if (mesh.indices.length % 3 !== 0) {
+      throw new KernelError('Mesh indices must come in triples', 'createFromMesh')
+    }
+    // Winding and normals are taken as given: this is how imported geometry and
+    // surface bodies enter, and neither is guaranteed to bound a closed volume.
+    return this.#register(toBufferGeometry(mesh))
+  }
+
   async extrude(params: ExtrudeParams): Promise<ShapeHandle> {
     const {
       profile,
