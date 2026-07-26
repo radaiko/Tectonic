@@ -1,1 +1,6 @@
-node_modules/\ndist/\ncoverage/\n.DS_Store\n*.wasm\n
+node_modules/
+dist/
+coverage/
+.DS_Store
+*.wasm
+.prompt-*.md
