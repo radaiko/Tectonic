@@ -1,5 +1,5 @@
 import { FeatureType } from './FeatureType'
-import type { FeatureParameters } from './parameters'
+import { cloneParameters, type FeatureParameters } from './parameters'
 import {
   BASE_PROFILE_KINDS,
   BEND_METHODS,
@@ -560,7 +560,12 @@ const DEFAULTS: Record<FeatureType, FeatureParameters> = {
   [FeatureType.StitchSurface]: { tolerance: 0, requireClosed: false, surfaceBodyIds: [] },
 }
 
-/** The parameter set a freshly created feature of this kind starts with. */
+/**
+ * The parameter set a freshly created feature of this kind starts with. Cloned
+ * deeply: a shallow copy would hand out the very array the defaults hold, so a
+ * caller pushing an id onto `surfaceBodyIds` would corrupt the defaults for
+ * every later feature — and for every kind sharing them, as trim and split do.
+ */
 export function defaultParameters(type: FeatureType): FeatureParameters {
-  return { ...DEFAULTS[type] }
+  return cloneParameters(DEFAULTS[type])
 }

@@ -291,7 +291,7 @@ export class MateSolver {
       worldTransforms,
       mateStatus: status,
       messages,
-      overConstrained: this.#overConstrained(active, removedByComponent, surplus),
+      overConstrained: this.#overConstrained(active, removedByComponent, surplus, conflicts),
       unsolved: this.#unsolved(removedByComponent),
       conflicts,
       floating,
@@ -440,8 +440,10 @@ export class MateSolver {
     mates: readonly Mate[],
     removed: ReadonlyMap<string, number>,
     surplus: ReadonlyMap<string, Set<string>>,
+    conflicts: readonly string[],
   ): OverConstrainedComponent[] {
     const found: OverConstrainedComponent[] = []
+    const unsatisfied = new Set(conflicts)
     const ids = new Set<string>([...surplus.keys()])
     for (const [id, count] of removed) {
       if (count > FULL_DEGREES_OF_FREEDOM) ids.add(id)
@@ -458,7 +460,10 @@ export class MateSolver {
         componentId,
         mateIds,
         degreesRemoved: count,
-        conflicting: mateIds.some((mateId) => extra?.has(mateId) ?? false),
+        // Surplus alone only means the component is held more than once, which a
+        // repeated mate does harmlessly. It conflicts only once one of those
+        // mates could not be satisfied where the others put the component.
+        conflicting: mateIds.some((mateId) => unsatisfied.has(mateId)),
       })
     }
     return found
@@ -482,16 +487,24 @@ export class MateSolver {
   }
 }
 
-/** The travel a mate asks for, clamped to whichever limits govern it. */
+/**
+ * The travel a mate asks for, clamped to whichever limits govern it.
+ *
+ * A mate carries one limit range, and it is read in the units of the single
+ * quantity that mate drives: degrees for a purely angular mate, lengths for
+ * everything else. Clamping the other quantity against it as well would measure
+ * an angle against a linear range — which silently mis-orients any mate that
+ * drives both, such as a cylindrical, screw or rack-and-pinion joint.
+ */
 function drivenValues(
   mate: Mate,
   alignment: MateAlignment,
 ): { readonly distance: number; readonly angle: number } {
   const { distance, angle, limits } = mate.parameters
+  const limitsGovernAngle = alignment.driven === 'angle'
   return {
-    distance:
-      alignment.driven === 'angle' ? distance : clampToLimits(distance, limits),
-    angle: alignment.driven === 'distance' ? angle : clampToLimits(angle, limits),
+    distance: limitsGovernAngle ? distance : clampToLimits(distance, limits),
+    angle: limitsGovernAngle ? clampToLimits(angle, limits) : angle,
   }
 }
 
