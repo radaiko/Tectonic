@@ -21,6 +21,8 @@ export const FeatureType = {
   Mirror: 'MirrorFeature',
   Scale: 'ScaleFeature',
   Combine: 'CombineFeature',
+  Split: 'SplitFeature',
+  DirectEdit: 'DirectEditFeature',
 } as const
 
 export type FeatureType = (typeof FeatureType)[keyof typeof FeatureType]
@@ -90,6 +92,8 @@ const LABELS: Record<FeatureType, string> = {
   [FeatureType.Mirror]: 'Mirror',
   [FeatureType.Scale]: 'Scale',
   [FeatureType.Combine]: 'Combine',
+  [FeatureType.Split]: 'Split',
+  [FeatureType.DirectEdit]: 'Direct Edit',
 }
 
 /** Human-readable name used for default feature names and tree rows. */

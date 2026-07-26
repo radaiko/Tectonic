@@ -166,6 +166,44 @@ export interface DraftParams {
   readonly faceIds?: readonly string[]
 }
 
+/**
+ * The named pieces of a shape's boundary. Ids are derived from the geometry
+ * itself, so they survive a re-tessellation of the same solid but not an edit
+ * that changes it — enough for a selection to outlive a rebuild, which is what
+ * fillet, shell, draft and direct editing reference.
+ */
+export interface Topology {
+  readonly faceIds: readonly string[]
+  readonly edgeIds: readonly string[]
+  readonly vertexIds: readonly string[]
+}
+
+/** Which side of the cutting plane a split keeps. */
+export type SplitKeep = 'both' | 'front' | 'back'
+
+export interface SplitParams {
+  /** Cutting plane; its normal points at the "front" piece. */
+  readonly plane: PlaneFrame
+  readonly keep?: SplitKeep
+}
+
+export interface MoveFaceParams {
+  /** Faces to move. Empty is an error — direct editing needs a selection. */
+  readonly faceIds: readonly string[]
+  readonly direction: Vec3
+  readonly distance: number
+}
+
+export interface OffsetFaceParams {
+  readonly faceIds: readonly string[]
+  /** Distance along each face's own normal. Negative sinks the face inwards. */
+  readonly distance: number
+}
+
+export interface DeleteFaceParams {
+  readonly faceIds: readonly string[]
+}
+
 export interface TransformParams {
   readonly translate?: Vec3
   readonly rotate?: {
@@ -214,6 +252,19 @@ export interface IKernel {
   shell(shape: ShapeHandle, params: ShellParams): Promise<ShapeHandle>
   hole(shape: ShapeHandle, params: HoleParams): Promise<ShapeHandle>
   draft(shape: ShapeHandle, params: DraftParams): Promise<ShapeHandle>
+
+  /** Cuts a shape with a plane. Returns the pieces the `keep` mode asks for. */
+  split(shape: ShapeHandle, params: SplitParams): Promise<ShapeHandle[]>
+
+  /** The face, edge and vertex identifiers a selection can name. */
+  topology(shape: ShapeHandle): Promise<Topology>
+
+  /** Direct edit: drags the named faces, stretching what they are attached to. */
+  moveFace(shape: ShapeHandle, params: MoveFaceParams): Promise<ShapeHandle>
+  /** Direct edit: pushes the named faces along their own normals. */
+  offsetFace(shape: ShapeHandle, params: OffsetFaceParams): Promise<ShapeHandle>
+  /** Direct edit: removes the named faces and heals the opening left behind. */
+  deleteFace(shape: ShapeHandle, params: DeleteFaceParams): Promise<ShapeHandle>
 
   /** Rigid (or scaled) placement of a copy of `shape`. */
   transform(shape: ShapeHandle, params: TransformParams): Promise<ShapeHandle>

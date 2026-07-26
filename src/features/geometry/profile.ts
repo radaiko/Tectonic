@@ -64,6 +64,40 @@ export function sketchPath(sketch: SketchModel, entityIds?: readonly string[]): 
   return longest
 }
 
+/**
+ * Grows an open polyline into the closed region a rib occupies: the path offset
+ * by half the thickness to each side, walked out and back. Corners are mitred by
+ * averaging the adjacent segment normals, which is exact for gentle bends and
+ * pinches slightly on sharp ones.
+ */
+export function thickenPath(path: readonly Vec2[], thickness: number): Profile | null {
+  const spine = weld(path)
+  if (spine.length < 2 || !(thickness > 0)) return null
+
+  const half = thickness / 2
+  const normals = spine.map((_, index) => {
+    const before = spine[Math.max(0, index - 1)] as Vec2
+    const after = spine[Math.min(spine.length - 1, index + 1)] as Vec2
+    const dx = after.x - before.x
+    const dy = after.y - before.y
+    const magnitude = Math.hypot(dx, dy)
+    return magnitude === 0 ? { x: 0, y: 0 } : { x: -dy / magnitude, y: dx / magnitude }
+  })
+
+  const left = spine.map((point, index) => ({
+    x: point.x + (normals[index] as Vec2).x * half,
+    y: point.y + (normals[index] as Vec2).y * half,
+  }))
+  const right = spine.map((point, index) => ({
+    x: point.x - (normals[index] as Vec2).x * half,
+    y: point.y - (normals[index] as Vec2).y * half,
+  }))
+
+  const loop = weld([...left, ...right.reverse()])
+  if (loop.length < 3) return null
+  return { points: signedArea(loop) >= 0 ? loop : loop.reverse() }
+}
+
 /** Signed area of a loop: positive when its points run counter-clockwise. */
 export function signedArea(loop: readonly Vec2[]): number {
   let total = 0

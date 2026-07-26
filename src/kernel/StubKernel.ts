@@ -5,23 +5,30 @@ import type {
   BoundingBox,
   BoxParams,
   ChamferParams,
+  DeleteFaceParams,
   DraftParams,
   ExtrudeParams,
   FilletParams,
   HoleParams,
   IKernel,
   LoftParams,
+  MoveFaceParams,
+  OffsetFaceParams,
   PlaneFrame,
   RevolveParams,
   ShapeHandle,
   ShellParams,
+  SplitParams,
   SweepParams,
   TessellationParams,
+  Topology,
   TransformParams,
   Vec2,
   Vec3,
 } from './IKernel'
 import { KernelError, WORLD_XY } from './IKernel'
+import type { TopologyFace } from './topology'
+import { facesById, meshTopology } from './topology'
 
 const DEG = Math.PI / 180
 
@@ -430,6 +437,169 @@ export class StubKernel implements IKernel {
     return this.#register(finish(geometry))
   }
 
+  /**
+   * Cuts the solid with a plane by intersecting it with a half-space large
+   * enough to swallow it. The pieces come back in `keep` order: front first,
+   * where "front" is the side the plane normal points at.
+   */
+  async split(shape: ShapeHandle, params: SplitParams): Promise<ShapeHandle[]> {
+    const geometry = this.#require(shape, 'split')
+    const { keep = 'both' } = params
+    const normal = frameNormal(params.plane, 'split')
+    const origin = new THREE.Vector3(
+      params.plane.origin.x,
+      params.plane.origin.y,
+      params.plane.origin.z,
+    )
+
+    const box = boundsOf(geometry)
+    const reach = new THREE.Vector3().subVectors(box.max, box.min).length() + 1
+    const solid = toMeshData(geometry)
+
+    const wanted: ('front' | 'back')[] = keep === 'both' ? ['front', 'back'] : [keep]
+    const pieces: ShapeHandle[] = []
+
+    for (const side of wanted) {
+      const direction = side === 'front' ? normal : normal.clone().negate()
+      const half = new THREE.BoxGeometry(reach * 2, reach * 2, reach * 2)
+      half.applyQuaternion(
+        new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction),
+      )
+      const center = origin.clone().addScaledVector(direction, reach)
+      half.translate(center.x, center.y, center.z)
+
+      const result = csgIntersect(solid, toMeshData(half))
+      half.dispose()
+      // A plane outside the solid leaves one side empty, which is a legitimate
+      // answer — the caller simply gets fewer pieces back than it asked for.
+      if (result.indices.length > 0) {
+        pieces.push(this.#register(finish(toBufferGeometry(result))))
+      }
+    }
+
+    if (pieces.length === 0) {
+      throw new KernelError('The split plane produced no solid', 'split')
+    }
+    return pieces
+  }
+
+  async topology(shape: ShapeHandle): Promise<Topology> {
+    const derived = meshTopology(toMeshData(this.#require(shape, 'topology')))
+    return {
+      faceIds: derived.faces.map((face) => face.id),
+      edgeIds: derived.edges.map((edge) => edge.id),
+      vertexIds: derived.vertices.map((vertex) => vertex.id),
+    }
+  }
+
+  async moveFace(shape: ShapeHandle, params: MoveFaceParams): Promise<ShapeHandle> {
+    const direction = new THREE.Vector3(
+      params.direction.x,
+      params.direction.y,
+      params.direction.z,
+    )
+    if (direction.lengthSq() === 0) {
+      throw new KernelError('Move face direction must be non-zero', 'moveFace')
+    }
+    direction.normalize().multiplyScalar(params.distance)
+
+    return this.#dragFaces(shape, params.faceIds, 'moveFace', () => direction)
+  }
+
+  async offsetFace(shape: ShapeHandle, params: OffsetFaceParams): Promise<ShapeHandle> {
+    return this.#dragFaces(
+      shape,
+      params.faceIds,
+      'offsetFace',
+      (face) =>
+        new THREE.Vector3(face.normal.x, face.normal.y, face.normal.z).multiplyScalar(
+          params.distance,
+        ),
+    )
+  }
+
+  /**
+   * Drops the named faces and closes the hole they leave with a fan over each
+   * boundary loop. Real healing extends the neighbouring surfaces instead; this
+   * caps flat, which is right for the planar openings the stub deals in.
+   */
+  async deleteFace(shape: ShapeHandle, params: DeleteFaceParams): Promise<ShapeHandle> {
+    const mesh = toMeshData(this.#require(shape, 'deleteFace'))
+    const derived = meshTopology(mesh)
+    const doomed = facesById(derived, params.faceIds)
+    if (doomed.length === 0) {
+      throw new KernelError('None of those faces belong to this solid', 'deleteFace')
+    }
+
+    const removed = new Set(doomed.flatMap((face) => face.triangles))
+    const kept: number[] = []
+    for (let start = 0; start + 2 < mesh.indices.length; start += 3) {
+      if (removed.has(start)) continue
+      kept.push(
+        mesh.indices[start] as number,
+        mesh.indices[start + 1] as number,
+        mesh.indices[start + 2] as number,
+      )
+    }
+    if (kept.length === 0) {
+      throw new KernelError('Deleting those faces would remove the whole solid', 'deleteFace')
+    }
+
+    const positions = [...mesh.positions]
+    for (const loop of boundaryLoops(kept, positions)) {
+      kept.push(...capLoop(loop, positions))
+    }
+
+    return this.#register(finish(toBufferGeometry({ positions, normals: [], indices: kept })))
+  }
+
+  /** Shared body of {@link moveFace} and {@link offsetFace}. */
+  async #dragFaces(
+    shape: ShapeHandle,
+    faceIds: readonly string[],
+    operation: string,
+    offsetOf: (face: TopologyFace) => THREE.Vector3,
+  ): Promise<ShapeHandle> {
+    if (faceIds.length === 0) {
+      throw new KernelError(`${operation} needs at least one face`, operation)
+    }
+
+    const geometry = this.#require(shape, operation).clone()
+    const mesh = toMeshData(geometry)
+    const derived = meshTopology(mesh)
+    const faces = facesById(derived, faceIds)
+    if (faces.length === 0) {
+      throw new KernelError('None of those faces belong to this solid', operation)
+    }
+
+    // A vertex shared by several selected faces takes every offset, so a corner
+    // dragged from two sides ends up where both faces agree it should be.
+    const offsets = new Map<string, THREE.Vector3>()
+    for (const face of faces) {
+      const offset = offsetOf(face)
+      for (const vertexId of face.vertexIds) {
+        const running = offsets.get(vertexId)
+        if (running) running.add(offset)
+        else offsets.set(vertexId, offset.clone())
+      }
+    }
+
+    const position = geometry.getAttribute('position')
+    for (let index = 0; index < position.count; index += 1) {
+      const offset = offsets.get(derived.vertexIdOf[index] as string)
+      if (!offset) continue
+      position.setXYZ(
+        index,
+        position.getX(index) + offset.x,
+        position.getY(index) + offset.y,
+        position.getZ(index) + offset.z,
+      )
+    }
+    position.needsUpdate = true
+
+    return this.#register(finish(geometry))
+  }
+
   async transform(shape: ShapeHandle, params: TransformParams): Promise<ShapeHandle> {
     const geometry = this.#require(shape, 'transform').clone()
     geometry.applyMatrix4(transformMatrix(params))
@@ -706,6 +876,99 @@ function flipWinding(geometry: THREE.BufferGeometry): void {
     position.setXYZ(i + 2, a.x, a.y, a.z)
   }
   position.needsUpdate = true
+}
+
+/**
+ * The open rims of a triangle soup, as chains of directed sides. A side that no
+ * triangle walks back along is on the boundary; following those sides from end
+ * to end traces each hole exactly once.
+ */
+function boundaryLoops(indices: readonly number[], positions: readonly number[]): number[][] {
+  const weldOf = weldMap(positions)
+  const sides = new Map<string, [number, number]>()
+
+  for (let start = 0; start + 2 < indices.length; start += 3) {
+    for (let corner = 0; corner < 3; corner += 1) {
+      const from = indices[start + corner] as number
+      const to = indices[start + ((corner + 1) % 3)] as number
+      if (weldOf[from] === weldOf[to]) continue
+      sides.set(`${weldOf[from]}:${weldOf[to]}`, [from, to])
+    }
+  }
+
+  const open = new Map<number, [number, number]>()
+  for (const [key, side] of sides) {
+    const [from, to] = key.split(':')
+    if (sides.has(`${to}:${from}`)) continue
+    open.set(weldOf[side[0]] as number, side)
+  }
+
+  const loops: number[][] = []
+  const walked = new Set<number>()
+
+  for (const seed of open.keys()) {
+    if (walked.has(seed)) continue
+
+    const loop: number[] = []
+    let cursor: number | undefined = seed
+    while (cursor !== undefined && !walked.has(cursor)) {
+      const side = open.get(cursor)
+      if (!side) break
+      walked.add(cursor)
+      loop.push(side[0])
+      cursor = weldOf[side[1]] as number
+    }
+    if (loop.length >= 3) loops.push(loop)
+  }
+
+  return loops
+}
+
+/** Fans a boundary loop into triangles about a new centroid vertex. */
+function capLoop(loop: readonly number[], positions: number[]): number[] {
+  const centroid = new THREE.Vector3()
+  for (const index of loop) {
+    centroid.add(
+      new THREE.Vector3(
+        positions[index * 3] as number,
+        positions[index * 3 + 1] as number,
+        positions[index * 3 + 2] as number,
+      ),
+    )
+  }
+  centroid.divideScalar(loop.length)
+
+  const apex = positions.length / 3
+  positions.push(centroid.x, centroid.y, centroid.z)
+
+  // Reversed against the rim: the boundary runs the way the *surviving* faces
+  // walk it, and the cap has to close the mesh, not repeat that direction.
+  const triangles: number[] = []
+  for (let index = 0; index < loop.length; index += 1) {
+    const from = loop[index] as number
+    const to = loop[(index + 1) % loop.length] as number
+    triangles.push(apex, to, from)
+  }
+  return triangles
+}
+
+/** Vertex number to welded ordinal, so duplicated corners compare equal. */
+function weldMap(positions: readonly number[]): number[] {
+  const ordinals = new Map<string, number>()
+  const result: number[] = []
+
+  for (let index = 0; index < positions.length / 3; index += 1) {
+    const key = [0, 1, 2]
+      .map((axis) => Math.round((positions[index * 3 + axis] as number) * 1e6))
+      .join(':')
+    let ordinal = ordinals.get(key)
+    if (ordinal === undefined) {
+      ordinal = ordinals.size
+      ordinals.set(key, ordinal)
+    }
+    result.push(ordinal)
+  }
+  return result
 }
 
 function boundsOf(geometry: THREE.BufferGeometry): THREE.Box3 {

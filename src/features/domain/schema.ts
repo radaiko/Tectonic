@@ -22,8 +22,14 @@ export const LOFT_CONDITIONS = ['normal', 'tangent', 'curvature'] as const
 export const CHAMFER_METHODS = ['distance-distance', 'distance-angle'] as const
 export const HOLE_KINDS = ['simple', 'countersink', 'counterbore'] as const
 export const PATTERN_TYPES = ['rectangular', 'circular'] as const
-export const MIRROR_PLANES = ['XY', 'XZ', 'YZ'] as const
+/** The base planes a feature can name — the same three a sketch can sit on. */
+export const SKETCH_PLANES = ['XY', 'XZ', 'YZ'] as const
+export const MIRROR_PLANES = SKETCH_PLANES
 export const COMBINE_OPERATIONS = ['union', 'subtract', 'intersect'] as const
+/** What a split does with the pieces the cutting plane produces. */
+export const SPLIT_KEEPS = ['both', 'front', 'back'] as const
+export const DIRECT_EDITS = ['move-face', 'offset-face', 'delete-face'] as const
+export type DirectEditKind = (typeof DIRECT_EDITS)[number]
 
 /** One editable parameter, as the properties panel renders it. */
 export interface ParameterField {
@@ -152,6 +158,16 @@ const FIELDS: Record<FeatureType, readonly ParameterField[]> = {
     choice('operation', 'Operation', COMBINE_OPERATIONS),
     flag('keepTools', 'Keep tools'),
   ],
+  [FeatureType.Split]: [
+    choice('keep', 'Keep', SPLIT_KEEPS),
+    num('offset', 'Plane offset', { unit: 'mm', step: 1 }),
+    choice('plane', 'Split plane', MIRROR_PLANES),
+  ],
+  [FeatureType.DirectEdit]: [
+    choice('editType', 'Edit', DIRECT_EDITS),
+    num('distance', 'Distance', { unit: 'mm', step: 1 }),
+    { key: 'faceIds', label: 'Faces', kind: 'text' },
+  ],
 }
 
 /** The editable parameters of a feature kind, in display order. */
@@ -276,6 +292,19 @@ const DEFAULTS: Record<FeatureType, FeatureParameters> = {
     targetBodyId: '',
     toolBodyIds: [],
     keepTools: false,
+  },
+  [FeatureType.Split]: {
+    plane: 'XY',
+    offset: 0,
+    keep: 'both',
+    bodyIds: [],
+  },
+  [FeatureType.DirectEdit]: {
+    editType: 'move-face',
+    distance: 5,
+    direction: { x: 0, y: 0, z: 1 },
+    faceIds: [],
+    bodyIds: [],
   },
 }
 

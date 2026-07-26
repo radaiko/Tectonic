@@ -1,10 +1,11 @@
 import type { PlaneFrame, Profile, ShapeHandle, Vec3 } from '../../kernel/IKernel'
 import { KernelError } from '../../kernel/IKernel'
-import type { SketchModel } from '../../sketch/domain/SketchModel'
+import type { SketchModel, SketchPlane } from '../../sketch/domain/SketchModel'
 import { planeFrame } from '../geometry/plane'
 import { sketchProfiles } from '../geometry/profile'
-import { readOptionalString, readStringArray } from '../domain/parameters'
+import { readChoice, readNumber, readOptionalString, readStringArray } from '../domain/parameters'
 import type { BooleanOperation } from '../domain/schema'
+import { SKETCH_PLANES } from '../domain/schema'
 import type { OperationContext, Solid } from './types'
 import { FeatureError } from './types'
 
@@ -54,6 +55,39 @@ export function targetSolids(context: OperationContext): Solid[] {
 export function namedSolid(context: OperationContext, key: string): Solid | undefined {
   const id = readOptionalString(context.feature.parameters, key)
   return id ? context.solids.find((solid) => solid.id === id) : undefined
+}
+
+/**
+ * Solids a pattern, mirror or combine draws its instances from: the ones the
+ * named features last wrote, falling back to the feature's explicit body list.
+ */
+export function sourceSolids(context: OperationContext): Solid[] {
+  const featureIds = readStringArray(context.feature.parameters, 'sourceFeatureIds')
+  if (featureIds.length === 0) return targetSolids(context)
+
+  const sources = context.solids.filter((solid) => featureIds.includes(solid.featureId))
+  if (sources.length === 0) {
+    throw new FeatureError('The features this one copies produced no solid')
+  }
+  return sources
+}
+
+/** A base plane named by a `plane` parameter, shifted by an `offset` one. */
+export function parameterPlane(context: OperationContext, fallback: SketchPlane = 'XY'): PlaneFrame {
+  const params = context.feature.parameters
+  const plane = readChoice(params, 'plane', SKETCH_PLANES, fallback)
+  return planeFrame(plane, readNumber(params, 'offset', 0))
+}
+
+/** Swaps a solid's shape for a new one, releasing the geometry it replaces. */
+export function replaceShape(
+  context: OperationContext,
+  solid: Solid,
+  shape: ShapeHandle,
+): void {
+  context.kernel.dispose(solid.shape)
+  solid.shape = shape
+  solid.featureId = context.feature.id
 }
 
 /** Fuses several tool shapes into one, disposing the intermediates. */

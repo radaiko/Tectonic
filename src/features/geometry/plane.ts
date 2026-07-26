@@ -64,6 +64,22 @@ export function negateVec3(vector: Vec3): Vec3 {
   return scaleVec3(vector, -1)
 }
 
+export function addVec3(a: Vec3, b: Vec3): Vec3 {
+  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }
+}
+
+export function subtractVec3(a: Vec3, b: Vec3): Vec3 {
+  return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }
+}
+
+export function dotVec3(a: Vec3, b: Vec3): number {
+  return a.x * b.x + a.y * b.y + a.z * b.z
+}
+
+export function lengthVec3(vector: Vec3): number {
+  return Math.hypot(vector.x, vector.y, vector.z)
+}
+
 export function cross(a: Vec3, b: Vec3): Vec3 {
   return {
     x: a.y * b.z - a.z * b.y,

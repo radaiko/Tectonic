@@ -1,6 +1,9 @@
 import type { MeshData } from './MeshData'
 import type { SketchModelJSON } from '../sketch/domain/SketchModel'
 import { SketchModel } from '../sketch/domain/SketchModel'
+import { FeatureTree } from '../features/FeatureTree'
+import type { FeatureJSON } from '../features/domain/Feature'
+import { featureFromUnknown } from '../features/domain/Feature'
 
 /** Format version of the .tectonic container. Bump on breaking schema changes. */
 export const TECTONIC_FORMAT_VERSION = 1
@@ -30,26 +33,22 @@ export interface Part {
   readonly bodies: Body[]
 }
 
-/**
- * One entry of the ordered, parametric feature tree. `parameters` stays an open
- * record so feature kinds can be added in M2 without a format change.
- */
-export interface Feature {
-  readonly id: string
-  readonly name: string
-  readonly type: string
-  readonly suppressed: boolean
-  readonly parameters: Record<string, FeatureParameterValue>
-}
-
-export type FeatureParameterValue = string | number | boolean | null
-
 export interface TectonicDocument {
   readonly version: number
   readonly metadata: DocumentMetadata
+  /**
+   * Geometry that arrived with the file rather than being modelled here. Bodies
+   * built by the feature tree are computed on every rebuild and deliberately not
+   * written back — the tree plus the sketches is the model.
+   */
   readonly parts: Part[]
-  readonly features: Feature[]
-  /** The document's 2D sketch. Optional so pre-M1 files still open. */
+  /** The ordered modelling history. */
+  readonly features: readonly FeatureJSON[]
+  /** How many features sit in front of the roll bar. Defaults to all of them. */
+  readonly rollBarIndex?: number
+  /** Every sketch in the document. Optional so pre-M2 files still open. */
+  readonly sketches?: readonly SketchModelJSON[]
+  /** The single M1 sketch. Read when `sketches` is absent. */
   readonly sketch?: SketchModelJSON
 }
 
