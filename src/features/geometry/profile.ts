@@ -19,15 +19,10 @@ export function sketchProfiles(
   sketch: SketchModel,
   entityIds?: readonly string[],
 ): Profile[] {
-  const selected = entityIds && entityIds.length > 0 ? new Set(entityIds) : null
   const loops: Vec2[][] = []
   const segments: Segment[] = []
 
-  for (const entity of sketch.entities.values()) {
-    if (entity.isConstruction) continue
-    if (entity.type === 'point') continue
-    if (selected && !selected.has(entity.id)) continue
-
+  for (const entity of considered(sketch, entityIds)) {
     if (isClosedEntity(entity)) {
       const loop = stripClosingPoint(tessellate(sketch, entity))
       if (loop.length >= 3) loops.push(loop)
@@ -47,12 +42,9 @@ export function sketchProfiles(
  * follows. Returns an empty array when the sketch has no usable curve.
  */
 export function sketchPath(sketch: SketchModel, entityIds?: readonly string[]): Vec2[] {
-  const selected = entityIds && entityIds.length > 0 ? new Set(entityIds) : null
   const segments: Segment[] = []
 
-  for (const entity of sketch.entities.values()) {
-    if (entity.isConstruction || entity.type === 'point') continue
-    if (selected && !selected.has(entity.id)) continue
+  for (const entity of considered(sketch, entityIds)) {
     const ends = endpointsOf(entity)
     if (ends) segments.push({ ...ends, points: tessellate(sketch, entity) })
   }
@@ -128,6 +120,33 @@ interface Segment {
   readonly startId: string
   readonly endId: string
   readonly points: Vec2[]
+}
+
+/**
+ * The entities a profile or path is read from: real geometry, within the
+ * selection if there is one, and not already spoken for.
+ *
+ * A composite entity owns the curves it is drawn from — a rectangle owns its
+ * four lines — so those lines must not be chained into a second loop tracing
+ * exactly the same boundary. Selecting the lines on their own still works,
+ * because ownership is only claimed by composites that are themselves in play.
+ */
+function considered(sketch: SketchModel, entityIds?: readonly string[]): SketchEntity[] {
+  const selected = entityIds && entityIds.length > 0 ? new Set(entityIds) : null
+  const candidates = [...sketch.entities.values()].filter(
+    (entity) =>
+      !entity.isConstruction &&
+      entity.type !== 'point' &&
+      (!selected || selected.has(entity.id)),
+  )
+
+  const owned = new Set<string>()
+  for (const entity of candidates) {
+    if (!isClosedEntity(entity)) continue
+    for (const id of entity.referencedIds) owned.add(id)
+  }
+
+  return candidates.filter((entity) => isClosedEntity(entity) || !owned.has(entity.id))
 }
 
 function isClosedEntity(entity: SketchEntity): boolean {

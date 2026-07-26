@@ -2,7 +2,7 @@ import type { MeshData } from './MeshData'
 import type { SketchModelJSON } from '../sketch/domain/SketchModel'
 import { SketchModel } from '../sketch/domain/SketchModel'
 import { FeatureTree } from '../features/FeatureTree'
-import type { FeatureJSON } from '../features/domain/Feature'
+import type { Feature, FeatureJSON } from '../features/domain/Feature'
 import { featureFromUnknown } from '../features/domain/Feature'
 
 /** Format version of the .tectonic container. Bump on breaking schema changes. */
@@ -97,6 +97,38 @@ export function withSketch(
   return {
     ...document,
     sketch: sketch.toJSON(),
+    metadata: { ...document.metadata, modified: now ?? new Date().toISOString() },
+  }
+}
+
+/**
+ * The document's modelling history as a live tree. Entries that are not a
+ * feature this build understands are dropped rather than failing the open — a
+ * file is worth more half-read than not read at all.
+ */
+export function documentFeatureTree(document: TectonicDocument): FeatureTree {
+  const features: Feature[] = []
+  for (const entry of document.features) {
+    try {
+      features.push(featureFromUnknown(entry))
+    } catch {
+      // Unknown feature kind: skip it and keep the rest of the history.
+    }
+  }
+  return new FeatureTree(features, document.rollBarIndex)
+}
+
+/** The document with the history as it currently stands, restamped as modified. */
+export function withFeatureTree(
+  document: TectonicDocument,
+  tree: FeatureTree,
+  now?: string,
+): TectonicDocument {
+  const json = tree.toJSON()
+  return {
+    ...document,
+    features: json.features,
+    rollBarIndex: json.rollBarIndex,
     metadata: { ...document.metadata, modified: now ?? new Date().toISOString() },
   }
 }

@@ -1,11 +1,26 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
 import { ThreeViewport } from '../3d/ThreeViewport'
 import type { MeshData } from '../domain/MeshData'
-import type { TectonicDocument } from '../domain/Document'
-import { countBodies, documentSketch, withSketch } from '../domain/Document'
+import type { Body, TectonicDocument } from '../domain/Document'
+import {
+  countBodies,
+  documentFeatureTree,
+  documentSketch,
+  withFeatureTree,
+  withSketch,
+} from '../domain/Document'
 import { triangleCount } from '../domain/MeshData'
+import { FeatureEngine } from '../features/FeatureEngine'
+import type { FeatureEvaluation } from '../features/FeatureEngine'
+import { FeatureType } from '../features/domain/FeatureType'
+import type { FeatureParameters } from '../features/domain/parameters'
+import { createFeature, nextFeatureName } from '../features/domain/factory'
+import { StubKernel } from '../kernel/StubKernel'
 import { SketchEditor } from '../sketch/SketchEditor'
 import { Button } from '../ui/Button'
+import { FeaturePropertiesPanel } from '../ui/FeaturePropertiesPanel'
+import type { ComputedValue } from '../ui/FeaturePropertiesPanel'
+import { FeatureTreePanel } from '../ui/FeatureTreePanel'
 import './EditorView.css'
 
 export type EditorSurface = 'sketch' | 'model'
@@ -18,24 +33,129 @@ export interface EditorViewProps {
 }
 
 export function EditorView({ document, onSave, onClose }: EditorViewProps): React.ReactElement {
+  // Mutable and long-lived: the panels edit these models in place, and a
+  // revision counter — not a new object — is what tells React to redraw.
+  const sketch = useMemo(() => documentSketch(document), [document])
+  const tree = useMemo(() => documentFeatureTree(document), [document])
+  const kernel = useMemo(() => new StubKernel(), [])
+  const engine = useMemo(() => new FeatureEngine(kernel), [kernel])
+
+  const [revision, bumpRevision] = useReducer((count: number) => count + 1, 0)
+  const [surface, setSurface] = useState<EditorSurface>('sketch')
+  const [modified, setModified] = useState(false)
+  const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null)
+  const [evaluation, setEvaluation] = useState<FeatureEvaluation | null>(null)
+
+  // Every edit to the tree or its parameters ends here: one rebuild, whose
+  // result is dropped when a newer one has already started.
+  useEffect(() => {
+    let current = true
+    void engine
+      .evaluate(tree, [sketch])
+      .then((result) => {
+        if (current) setEvaluation(result)
+      })
+      .catch(() => {
+        if (current) setEvaluation(null)
+      })
+    return () => {
+      current = false
+    }
+  }, [engine, revision, sketch, tree])
+
+  const modelledBodies: readonly Body[] = evaluation?.bodies ?? []
   const meshes: MeshData[] = useMemo(
-    () => document.parts.flatMap((part) => part.bodies.map((body) => body.mesh)),
-    [document],
+    () => [
+      ...document.parts.flatMap((part) => part.bodies.map((body) => body.mesh)),
+      ...modelledBodies.map((body) => body.mesh),
+    ],
+    [document, modelledBodies],
   )
   const triangles = useMemo(
     () => meshes.reduce((total, mesh) => total + triangleCount(mesh), 0),
     [meshes],
   )
-  // Mutable and long-lived: the sketch editor edits this model in place.
-  const sketch = useMemo(() => documentSketch(document), [document])
 
-  const [surface, setSurface] = useState<EditorSurface>('sketch')
-  const [modified, setModified] = useState(false)
+  const selectedFeature = selectedFeatureId ? (tree.getFeature(selectedFeatureId) ?? null) : null
+  const computed = useMemo<ComputedValue[]>(
+    () => computedValues(evaluation, selectedFeatureId),
+    [evaluation, selectedFeatureId],
+  )
+
+  /** Records an edit to the model: mark dirty and schedule a rebuild. */
+  const touch = useCallback(() => {
+    setModified(true)
+    bumpRevision()
+  }, [])
 
   const handleSave = useCallback(() => {
-    onSave(withSketch(document, sketch))
+    onSave(withFeatureTree(withSketch(document, sketch), tree))
     setModified(false)
-  }, [document, onSave, sketch])
+  }, [document, onSave, sketch, tree])
+
+  const handleExtrude = useCallback(() => {
+    const feature = createFeature(FeatureType.Extrude, {
+      name: nextFeatureName(FeatureType.Extrude, tree.features),
+      sketchId: sketch.id,
+    })
+    tree.addFeature(feature)
+    setSelectedFeatureId(feature.id)
+    setSurface('model')
+    touch()
+  }, [sketch, touch, tree])
+
+  const handleReorder = useCallback(
+    (featureId: string, newIndex: number) => {
+      if (tree.reorderFeature(featureId, newIndex)) touch()
+    },
+    [touch, tree],
+  )
+
+  const handleToggleSuppress = useCallback(
+    (featureId: string) => {
+      const feature = tree.getFeature(featureId)
+      if (!feature) return
+      if (feature.suppressed) tree.unsuppressFeature(featureId)
+      else tree.suppressFeature(featureId)
+      touch()
+    },
+    [touch, tree],
+  )
+
+  const handleDelete = useCallback(
+    (featureId: string) => {
+      const removed = tree.removeFeature(featureId)
+      if (removed.length === 0) return
+      setSelectedFeatureId((current) => (current && removed.includes(current) ? null : current))
+      touch()
+    },
+    [touch, tree],
+  )
+
+  const handleRename = useCallback(
+    (featureId: string, name: string) => {
+      if (tree.renameFeature(featureId, name)) touch()
+    },
+    [touch, tree],
+  )
+
+  const handleRollBar = useCallback(
+    (index: number) => {
+      tree.moveRollBar(index)
+      touch()
+    },
+    [touch, tree],
+  )
+
+  const handleParameterChange = useCallback(
+    (featureId: string, changes: FeatureParameters) => {
+      const feature = tree.getFeature(featureId)
+      if (!feature) return
+      feature.setParameters(changes)
+      touch()
+    },
+    [touch, tree],
+  )
 
   return (
     <div className="editor">
@@ -44,6 +164,11 @@ export function EditorView({ document, onSave, onClose }: EditorViewProps): Reac
         <span className="editor__doc">{document.metadata.name}</span>
         <span className="editor__modified">{modified ? 'Modified' : 'Saved'}</span>
         <div className="editor__spacer" />
+        {surface === 'sketch' ? (
+          <Button variant="primary" onClick={handleExtrude}>
+            Extrude
+          </Button>
+        ) : null}
         <div className="editor__surfaces" role="group" aria-label="Editing surface">
           <Button
             variant={surface === 'sketch' ? 'primary' : 'ghost'}
@@ -68,52 +193,85 @@ export function EditorView({ document, onSave, onClose }: EditorViewProps): Reac
 
       <div className="editor__body">
         <aside className="editor__panel">
-          <h2 className="editor__panel-title">Feature Tree</h2>
-          {document.parts.length === 0 ? (
-            <p className="editor__empty">No parts yet.</p>
+          {surface === 'model' ? (
+            <FeatureTreePanel
+              tree={tree}
+              selectedFeatureId={selectedFeatureId}
+              onSelect={setSelectedFeatureId}
+              onReorder={handleReorder}
+              onToggleSuppress={handleToggleSuppress}
+              onDelete={handleDelete}
+              onRename={handleRename}
+              onRollBarChange={handleRollBar}
+            />
           ) : (
-            <ul className="editor__tree">
-              {document.parts.map((part) => (
-                <li key={part.id}>
-                  <span className="editor__node editor__node--part">{part.name}</span>
-                  <ul>
-                    {part.bodies.map((body) => (
-                      <li key={body.id} className="editor__node">
-                        {body.name}
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
+            <>
+              <h2 className="editor__panel-title">Parts</h2>
+              {document.parts.length === 0 ? (
+                <p className="editor__empty">No parts yet.</p>
+              ) : (
+                <ul className="editor__tree">
+                  {document.parts.map((part) => (
+                    <li key={part.id}>
+                      <span className="editor__node editor__node--part">{part.name}</span>
+                      <ul>
+                        {part.bodies.map((body) => (
+                          <li key={body.id} className="editor__node">
+                            {body.name}
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
-          {document.features.length > 0 ? (
-            <ul className="editor__tree">
-              {document.features.map((feature) => (
-                <li key={feature.id} className="editor__node">
-                  {feature.name}
-                </li>
-              ))}
-            </ul>
-          ) : null}
         </aside>
 
         {/* Both surfaces stay mounted so switching keeps their state and the
             3D viewport does not have to rebuild its scene. */}
         <section className="editor__viewport" hidden={surface !== 'sketch'}>
-          <SketchEditor model={sketch} onChange={() => setModified(true)} />
+          <SketchEditor model={sketch} onChange={touch} />
         </section>
         <section className="editor__viewport" hidden={surface !== 'model'}>
           <ThreeViewport meshes={meshes} />
         </section>
+
+        <aside className="editor__panel editor__panel--right">
+          <FeaturePropertiesPanel
+            feature={selectedFeature}
+            computed={computed}
+            onChange={handleParameterChange}
+          />
+        </aside>
       </div>
 
       <footer className="editor__status">
         <span>{document.parts.length} parts</span>
-        <span>{countBodies(document)} bodies</span>
+        <span>{countBodies(document) + modelledBodies.length} bodies</span>
         <span>{triangles.toLocaleString()} triangles</span>
         <span>{document.metadata.units}</span>
+        {evaluation && evaluation.failures.length > 0 ? (
+          <span className="editor__failures">
+            {evaluation.failures.length} feature errors
+          </span>
+        ) : null}
       </footer>
     </div>
   )
+}
+
+/** What the last rebuild made of the selected feature, as read-only rows. */
+function computedValues(
+  evaluation: FeatureEvaluation | null,
+  featureId: string | null,
+): ComputedValue[] {
+  if (!evaluation || !featureId) return []
+  const bodies = evaluation.bodiesByFeature.get(featureId) ?? []
+  const triangles = bodies.reduce((total, body) => total + triangleCount(body.mesh), 0)
+  return [
+    { label: 'Bodies', value: String(bodies.length) },
+    { label: 'Triangles', value: triangles.toLocaleString() },
+  ]
 }

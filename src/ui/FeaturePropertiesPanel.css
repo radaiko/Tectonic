@@ -1,0 +1,81 @@
+.properties {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.properties__title,
+.properties__subtitle {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.properties__subtitle {
+  margin-top: 0.9rem;
+}
+
+.properties__feature {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.properties__empty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.properties__error {
+  margin: 0 0 0.6rem;
+  font-size: 0.75rem;
+  color: #f85149;
+}
+
+.properties__fields {
+  margin: 0;
+}
+
+.properties__row {
+  display: grid;
+  grid-template-columns: 1fr 5.5rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.12rem 0;
+}
+
+.properties__row dt {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.properties__row dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.properties__row input,
+.properties__row select {
+  width: 100%;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-base);
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+}
+
+.properties__row input[type='checkbox'] {
+  width: auto;
+}
+
+.properties__fields--readonly dd {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
