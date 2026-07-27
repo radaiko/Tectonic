@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { KernelError, WORLD_XY, isBRepKernel } from '../../src/kernel/IKernel'
 import type { FaceInfo, PlaneFrame, Profile, ShapeHandle, Vec3 } from '../../src/kernel/IKernel'
 import { OpenCascadeKernel } from '../../src/kernel/OpenCascadeKernel'
-import { resetOpenCascade } from '../../src/kernel/wasm/WasmLoader'
+import { loadedOpenCascade, resetOpenCascade } from '../../src/kernel/wasm/WasmLoader'
 import type { MeshData } from '../../src/domain/MeshData'
 import { triangleCount, vertexCount } from '../../src/domain/MeshData'
 
@@ -93,10 +93,15 @@ describe('OpenCascadeKernel — loading', () => {
   })
 
   it('hands the same WASM instance to a second kernel', async () => {
+    const shared = loadedOpenCascade()
     const again = await OpenCascadeKernel.create(NODE_LOAD)
     const box = await again.createBox({ width: 1, height: 1, depth: 1 })
 
-    expect(await volumeOf(await kernel.copy(box))).toBeCloseTo(1)
+    expect(loadedOpenCascade()).toBe(shared)
+    expect((await again.massProperties(await again.copy(box))).volume).toBeCloseTo(1)
+    // The WASM module is shared, but each kernel keeps its own handle registry,
+    // so a handle minted by one is unknown to the other.
+    await expect(kernel.copy(box)).rejects.toThrow('Unknown shape')
     again.disposeAll()
   })
 })
@@ -611,7 +616,10 @@ describe('OpenCascadeKernel — edge and face treatments', () => {
     const all = await kernel.draft(box, { angle: 5 })
 
     expect(await volumeOf(one)).toBeLessThan(await volumeOf(all))
-    expect(await volumeOf(one)).toBeGreaterThan(1000)
+    // The neutral plane sits at z = 0, through the middle of the box, so tilting
+    // a single wall adds above it exactly what it takes away below: no net gain.
+    // Drafting all four walls does gain, because their wedges meet at the corners.
+    expect(await volumeOf(one)).toBeCloseTo(1000, 6)
   })
 
   it('rejects a draft that cannot be applied', async () => {
@@ -856,7 +864,9 @@ describe('OpenCascadeKernel — direct editing', () => {
     const bossFaces = await faceIdsWhere(bossed, (face) => face.centroid.z > 5 + 1e-9)
     const healed = await kernel.deleteFace(bossed, { faceIds: bossFaces })
 
-    expect(await volumeOf(bossed)).toBeCloseTo(1004)
+    // The boss sits on the top face (z 5 to 7) rather than sinking into it, so
+    // the union is the box plus the whole 2 x 2 x 2 tool.
+    expect(await volumeOf(bossed)).toBeCloseTo(1008)
     expect(await volumeOf(healed)).toBeCloseTo(1000, 6)
     expect((await kernel.faces(healed)).length).toBe(6)
   })
@@ -1033,7 +1043,11 @@ describe('OpenCascadeKernel — tessellation and properties', () => {
 
     expect(properties.volume).toBeCloseTo(1000)
     expect(properties.surfaceArea).toBeCloseTo(600)
-    expect(properties.centerOfMass).toEqual({ x: 0, y: 0, z: 0 })
+    expect(properties.centerOfMass).toEqual({
+      x: expect.closeTo(0, 9),
+      y: expect.closeTo(0, 9),
+      z: expect.closeTo(0, 9),
+    })
     // m * (a^2 + b^2) / 12 for a cube of side 10 at unit density.
     expect(properties.inertia[0]).toBeCloseTo((1000 * (100 + 100)) / 12, 6)
     expect(properties.inertia).toHaveLength(9)
@@ -1042,7 +1056,11 @@ describe('OpenCascadeKernel — tessellation and properties', () => {
   it('reports the centre of mass of an off-centre solid', async () => {
     const box = await kernel.createBox({ width: 2, height: 2, depth: 2, center: { x: 3, y: 4, z: 5 } })
 
-    expect((await kernel.massProperties(box)).centerOfMass).toEqual({ x: 3, y: 4, z: 5 })
+    expect((await kernel.massProperties(box)).centerOfMass).toEqual({
+      x: expect.closeTo(3, 9),
+      y: expect.closeTo(4, 9),
+      z: expect.closeTo(5, 9),
+    })
   })
 
   it('thickens a surface into a solid', async () => {
