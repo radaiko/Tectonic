@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import type { WebGPURenderer } from 'three/webgpu'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -83,6 +83,25 @@ const BACKGROUND = 0x1a1d21
 const SURFACE = 0x4d9bd9
 const HIGHLIGHT = 0xef4444
 
+/** What the developer overlay reports about the frame that was just drawn. */
+interface FrameStats {
+  readonly fps: number
+  readonly triangles: number
+  readonly drawCalls: number
+}
+
+/** Frames averaged into one FPS reading — roughly a second at 60 Hz. */
+const SAMPLE_FRAMES = 60
+/** Frame budget while the rate lock is on. */
+const LOCKED_FRAME_MS = 1000 / 60
+/**
+ * A display that ticks a hair early would otherwise miss its slot and halve the
+ * frame rate, so the budget is checked with just under a millisecond of slack.
+ */
+const FRAME_SLACK_MS = 1
+
+const RENDERER_LABELS: Record<RendererKind, string> = { webgpu: 'WebGPU', webgl: 'WebGL' }
+
 export function ThreeViewport({
   meshes,
   highlights = [],
@@ -93,8 +112,49 @@ export function ThreeViewport({
   const modelGroupRef = useRef<THREE.Group | null>(null)
   // Which backend won. Kept so behaviour that differs between the two — a
   // screenshot needs the frame finished before the canvas is read back, and
-  // only WebGPU can promise that — has something to branch on.
+  // only WebGPU can promise that — has something to branch on. The state
+  // alongside it is the same fact in a form the overlay can render.
   const rendererKindRef = useRef<RendererKind | null>(null)
+  const [rendererKind, setRendererKind] = useState<RendererKind | null>(null)
+
+  const [overlayVisible, setOverlayVisible] = useState(false)
+  // Off by default, so the viewport keeps drawing as fast as the display allows
+  // until someone asks for the lock.
+  const [rateLocked, setRateLocked] = useState(false)
+  const [stats, setStats] = useState<FrameStats | null>(null)
+
+  // The animation loop reads both toggles through refs. Reading the state
+  // directly would put them in the renderer effect's dependencies, and tearing
+  // the GPU device down to switch a text overlay on is not a trade worth making.
+  const overlayVisibleRef = useRef(overlayVisible)
+  const rateLockedRef = useRef(rateLocked)
+
+  useEffect(() => {
+    overlayVisibleRef.current = overlayVisible
+    rateLockedRef.current = rateLocked
+    // Hiding the overlay drops the readings with it: showing it again a minute
+    // later should not flash numbers from whatever the scene used to be.
+    if (!overlayVisible) setStats(null)
+  }, [overlayVisible, rateLocked])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      // Ctrl+Shift only. Plain Ctrl and Cmd chords belong to the sketch editor's
+      // undo/redo, and `code` keeps these on the same physical keys regardless
+      // of keyboard layout or what Shift turns the character into.
+      if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return
+      if (event.code === 'KeyD') {
+        event.preventDefault()
+        setOverlayVisible((visible) => !visible)
+      } else if (event.code === 'KeyF') {
+        event.preventDefault()
+        setRateLocked((locked) => !locked)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   // Renderer, camera and controls live for the lifetime of the component; only
   // the model group is rebuilt when the meshes change.
@@ -131,6 +191,7 @@ export function ThreeViewport({
     /** Wires a resolved renderer to the DOM and starts drawing. */
     const attach = ({ renderer, kind }: ActiveRenderer): (() => void) => {
       rendererKindRef.current = kind
+      setRendererKind(kind)
       container.dataset.renderer = kind
 
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -155,13 +216,67 @@ export function ThreeViewport({
       const observer = new ResizeObserver(resize)
       observer.observe(container)
 
-      let frame = 0
-      const animate = (): void => {
-        frame = requestAnimationFrame(animate)
-        controls.update()
-        renderer.render(scene, camera)
+      /**
+       * The two backends disagree about `info.render.calls`: WebGL clears it
+       * every frame, while the WebGPU info keeps a running total there and
+       * reports the frame's own count as `drawCalls`. Probing for the property
+       * picks the per-frame number on either without a cast.
+       */
+      const readFrameCounts = (): Omit<FrameStats, 'fps'> => {
+        const render = renderer.info.render
+        return {
+          triangles: Math.round(render.triangles),
+          drawCalls: 'drawCalls' in render ? render.drawCalls : render.calls,
+        }
       }
-      animate()
+
+      let frame = 0
+      // Frames drawn since the current FPS window opened, and when it opened.
+      let windowFrames = 0
+      let windowStart = 0
+      let sampling = false
+      let lastDraw = 0
+
+      const animate = (now: number): void => {
+        frame = requestAnimationFrame(animate)
+
+        if (rateLockedRef.current) {
+          if (now - lastDraw < LOCKED_FRAME_MS - FRAME_SLACK_MS) return
+          lastDraw = now
+        }
+
+        controls.update()
+        // WebGL resets these counters inside render(), but the WebGPU info is
+        // only cleared by three's own animation loop, which this viewport does
+        // not use — without this its totals would climb forever. Both renderers
+        // then report the frame that render() is about to draw.
+        renderer.info.reset()
+        renderer.render(scene, camera)
+
+        if (!overlayVisibleRef.current) {
+          sampling = false
+          return
+        }
+
+        // First frame after the overlay opens only starts the clock: measuring
+        // against a window left over from before would report the average across
+        // however long the overlay was hidden.
+        if (!sampling) {
+          sampling = true
+          windowFrames = 0
+          windowStart = now
+          return
+        }
+
+        windowFrames += 1
+        const elapsed = now - windowStart
+        if (windowFrames < SAMPLE_FRAMES || elapsed <= 0) return
+
+        setStats({ fps: (windowFrames * 1000) / elapsed, ...readFrameCounts() })
+        windowFrames = 0
+        windowStart = now
+      }
+      animate(performance.now())
 
       return () => {
         cancelAnimationFrame(frame)
@@ -171,6 +286,7 @@ export function ThreeViewport({
         renderer.domElement.remove()
         delete container.dataset.renderer
         rendererKindRef.current = null
+        setRendererKind(null)
       }
     }
 
