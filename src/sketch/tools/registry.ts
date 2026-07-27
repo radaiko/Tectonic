@@ -23,6 +23,8 @@ export interface ToolDefinition {
   /** Single glyph for the toolbar button. */
   readonly icon: string
   readonly hint: string
+  /** Unmodified letter that picks this tool, upper case. Not every tool has one. */
+  readonly shortcut?: string
   /** Settings the options panel offers while this tool is active. */
   readonly options: readonly ToolOption[]
   readonly create: () => SketchTool
@@ -44,6 +46,7 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
     label: 'Select',
     icon: '⬉',
     hint: 'Pick, box-select and drag geometry',
+    shortcut: 'V',
     options: [],
     create: () => new SelectTool(),
   },
@@ -52,6 +55,7 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
     label: 'Line',
     icon: '⁄',
     hint: 'Click to chain segments, Esc to end',
+    shortcut: 'L',
     options: [],
     create: () => new LineTool(),
   },
@@ -60,6 +64,7 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
     label: 'Circle',
     icon: '○',
     hint: 'Drag from the centre to the radius',
+    shortcut: 'C',
     options: [],
     create: () => new CircleTool(),
   },
@@ -68,6 +73,7 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
     label: 'Arc',
     icon: '◠',
     hint: 'Two endpoints, then a point on the arc',
+    shortcut: 'A',
     options: [],
     create: () => new ArcTool(),
   },
@@ -76,6 +82,7 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
     label: 'Rectangle',
     icon: '▭',
     hint: 'Drag corner to corner, Alt for centred',
+    shortcut: 'R',
     options: [],
     create: () => new RectangleTool(),
   },
@@ -116,6 +123,7 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
     label: 'Trim',
     icon: '✂',
     hint: 'Click a stretch to cut, Shift to extend',
+    shortcut: 'T',
     options: [],
     create: () => new TrimTool(),
   },
@@ -124,6 +132,7 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
     label: 'Fillet',
     icon: '◜',
     hint: 'Pick two lines to round their corner',
+    shortcut: 'F',
     options: [{ key: 'filletRadius', label: 'Radius', kind: NUMBER, min: 0, step: 0.5 }],
     create: () => new FilletTool(),
   },
@@ -140,6 +149,7 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
     label: 'Dimension',
     icon: '↔',
     hint: 'Pick geometry to drive it with a value',
+    shortcut: 'D',
     options: [],
     create: () => new DimensionTool(),
   },
@@ -148,6 +158,7 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
     label: 'Mirror',
     icon: '⇄',
     hint: 'Select geometry, then pick the mirror line',
+    shortcut: 'M',
     options: [],
     create: () => new MirrorTool(),
   },
@@ -156,6 +167,7 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
     label: 'Pattern',
     icon: '▦',
     hint: 'Select geometry, then pick the direction or centre',
+    shortcut: 'P',
     options: [
       { key: 'patternMode', label: 'Mode', kind: 'patternMode' },
       { key: 'patternCount', label: 'Count', kind: NUMBER, min: 2, step: 1 },
@@ -182,6 +194,18 @@ export function toolDefinition(id: ToolId): ToolDefinition {
 
 export function createTool(id: ToolId): SketchTool {
   return toolDefinition(id).create()
+}
+
+const BY_SHORTCUT = new Map(
+  SKETCH_TOOLS.filter((definition) => definition.shortcut !== undefined).map((definition) => [
+    definition.shortcut as string,
+    definition.id,
+  ]),
+)
+
+/** The tool a bare letter picks, or null when the key is not a tool shortcut. */
+export function toolForShortcut(key: string): ToolId | null {
+  return BY_SHORTCUT.get(key.toUpperCase()) ?? null
 }
 
 /**

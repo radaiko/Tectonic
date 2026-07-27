@@ -77,6 +77,11 @@ export interface ThreeViewportProps {
   readonly highlights?: readonly MeshData[]
   /** Section view. Everything behind the plane is cut away. */
   readonly clipPlane?: ClipPlane | null
+  /**
+   * Whether the 3D view is the surface on screen. The shell keeps both surfaces
+   * mounted, so the bare-letter shortcuts stand down while the sketch has it.
+   */
+  readonly active?: boolean
 }
 
 const BACKGROUND = 0x1a1d21
@@ -113,6 +118,7 @@ export function ThreeViewport({
   meshes,
   highlights = [],
   clipPlane = null,
+  active = true,
 }: ThreeViewportProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -130,6 +136,9 @@ export function ThreeViewport({
   // been acquired, since there is nothing to draw with before then.
   const needsRenderRef = useRef(false)
   const requestRenderRef = useRef<() => void>(() => {})
+  // Framing needs the camera and the controls, both of which live inside the
+  // renderer effect; the key handler reaches them through here.
+  const fitViewRef = useRef<() => void>(() => {})
 
   const [overlayVisible, setOverlayVisible] = useState(false)
   // Off by default, so the viewport keeps drawing as fast as the display allows
@@ -160,19 +169,31 @@ export function ThreeViewport({
       // Ctrl+Shift only. Plain Ctrl and Cmd chords belong to the sketch editor's
       // undo/redo, and `code` keeps these on the same physical keys regardless
       // of keyboard layout or what Shift turns the character into.
-      if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return
-      if (event.code === 'KeyD') {
+      if (event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey) {
+        if (event.code === 'KeyD') {
+          event.preventDefault()
+          setOverlayVisible((visible) => !visible)
+        } else if (event.code === 'KeyF') {
+          event.preventDefault()
+          setRateLocked((locked) => !locked)
+        }
+        return
+      }
+
+      // Bare F frames the model, but only while the 3D view is the surface on
+      // screen: in a sketch the same key picks the fillet tool.
+      if (!active || event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return
+      const target = event.target as HTMLElement | null
+      if (target?.tagName === 'INPUT' || target?.tagName === 'SELECT') return
+      if (event.code === 'KeyF') {
         event.preventDefault()
-        setOverlayVisible((visible) => !visible)
-      } else if (event.code === 'KeyF') {
-        event.preventDefault()
-        setRateLocked((locked) => !locked)
+        fitViewRef.current()
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [active])
 
   // Renderer, camera and controls live for the lifetime of the component; only
   // the model group is rebuilt when the meshes change.
@@ -314,6 +335,35 @@ export function ThreeViewport({
       // Orbit, pan and zoom all land here, damped tail included.
       controls.addEventListener('change', requestRender)
 
+      /**
+       * Pulls the whole model into view, keeping the direction the camera is
+       * already looking from. An empty scene is left alone — there is nothing
+       * to frame, and moving the camera anyway would only lose the user's view.
+       */
+      const fitView = (): void => {
+        const box = new THREE.Box3().setFromObject(modelGroup)
+        if (box.isEmpty()) return
+        const sphere = box.getBoundingSphere(new THREE.Sphere())
+        // A degenerate body — a single point — still needs a radius to stand off from.
+        const radius = Math.max(sphere.radius, 1)
+
+        // Half the vertical field of view is what has to clear the sphere; the
+        // margin leaves the model off the very edge of the frame.
+        const distance = (radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.2
+        const direction = camera.position.clone().sub(controls.target)
+        if (direction.lengthSq() === 0) direction.set(1, 0.75, 1.15)
+        direction.normalize()
+
+        controls.target.copy(sphere.center)
+        camera.position.copy(sphere.center).addScaledVector(direction, distance)
+        camera.near = distance / 100
+        camera.far = distance * 100
+        camera.updateProjectionMatrix()
+        controls.update()
+        requestRender()
+      }
+      fitViewRef.current = fitView
+
       const resize = (): void => {
         const { clientWidth, clientHeight } = container
         if (clientWidth === 0 || clientHeight === 0) return
@@ -337,8 +387,9 @@ export function ThreeViewport({
         if (frame !== 0) cancelAnimationFrame(frame)
         needsRenderRef.current = false
         // Nothing left to draw with: later requests must not book a frame
-        // against a disposed renderer.
+        // against a disposed renderer, nor may a key move a camera that is gone.
         requestRenderRef.current = () => {}
+        fitViewRef.current = () => {}
         observer.disconnect()
         controls.removeEventListener('change', requestRender)
         controls.dispose()
@@ -423,7 +474,38 @@ export function ThreeViewport({
     }
   }, [clipPlane, highlights, meshes])
 
-  return <div className="viewport" ref={containerRef} data-testid="three-viewport" />
+  // The renderer's canvas is appended to the inner element imperatively, so it
+  // is kept clear of anything React renders alongside it.
+  return (
+    <div className="viewport">
+      <div className="viewport__canvas" ref={containerRef} data-testid="three-viewport" />
+      {overlayVisible ? (
+        <dl className="viewport__hud" data-testid="viewport-hud" aria-label="Developer overlay">
+          <div className="viewport__stat">
+            <dt>Renderer</dt>
+            <dd>{rendererKind ? RENDERER_LABELS[rendererKind] : 'starting…'}</dd>
+          </div>
+          <div className="viewport__stat">
+            <dt>FPS</dt>
+            {/* Readings only exist once a full sample window has been drawn. */}
+            <dd>{stats ? stats.fps.toFixed(0) : '—'}</dd>
+          </div>
+          <div className="viewport__stat">
+            <dt>Triangles</dt>
+            <dd>{stats ? stats.triangles.toLocaleString() : '—'}</dd>
+          </div>
+          <div className="viewport__stat">
+            <dt>Draw calls</dt>
+            <dd>{stats ? stats.drawCalls.toLocaleString() : '—'}</dd>
+          </div>
+          <div className="viewport__stat">
+            <dt>Rate lock</dt>
+            <dd>{rateLocked ? '60 fps' : 'off'}</dd>
+          </div>
+        </dl>
+      ) : null}
+    </div>
+  )
 }
 
 function disposeChildren(group: THREE.Group): void {

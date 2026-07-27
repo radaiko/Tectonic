@@ -22,7 +22,13 @@ import type {
   ToolSettings,
 } from './tools/SketchTool'
 import { DEFAULT_TOOL_SETTINGS } from './tools/SketchTool'
-import { SKETCH_TOOLS, createTool, toolDefinition, withNumericSetting } from './tools/registry'
+import {
+  SKETCH_TOOLS,
+  createTool,
+  toolDefinition,
+  toolForShortcut,
+  withNumericSetting,
+} from './tools/registry'
 import './SketchEditor.css'
 
 /** Viewport size assumed until the frame has been measured. */
@@ -38,6 +44,15 @@ export interface SketchEditorProps {
   /** Fired whenever the sketch changed, so the shell can mark the file dirty. */
   readonly onChange?: () => void
   readonly initialTool?: ToolId
+  /** Controlled tool selection. Left out, the editor tracks it itself. */
+  readonly tool?: ToolId
+  readonly onToolChange?: (tool: ToolId) => void
+  /**
+   * Whether the sketch is the surface the user is looking at. The shell keeps
+   * both surfaces mounted, so the bare-letter tool shortcuts have to stand
+   * down while the 3D view has the screen.
+   */
+  readonly active?: boolean
 }
 
 interface Diagnostics {
@@ -65,6 +80,9 @@ export function SketchEditor({
   model,
   onChange,
   initialTool = 'select',
+  tool: controlledTool,
+  onToolChange,
+  active = true,
 }: SketchEditorProps): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const frameRef = useRef<HTMLDivElement | null>(null)
@@ -72,7 +90,8 @@ export function SketchEditor({
   const selectionRef = useRef<Set<string>>(new Set<string>())
   const panRef = useRef<Vec2 | null>(null)
 
-  const [toolId, setToolId] = useState<ToolId>(initialTool)
+  const [ownToolId, setOwnToolId] = useState<ToolId>(initialTool)
+  const toolId = controlledTool ?? ownToolId
   const [settings, setSettings] = useState<ToolSettings>(DEFAULT_TOOL_SETTINGS)
   const [view, setView] = useState<SketchView>(() =>
     createView(DEFAULT_VIEW_WIDTH, DEFAULT_VIEW_HEIGHT),
@@ -88,6 +107,16 @@ export function SketchEditor({
   const history = useMemo(() => new SketchHistory(model), [model])
   const tool = useMemo(() => createTool(toolId), [toolId])
   const definition = toolDefinition(toolId)
+
+  /** Switches tools from the toolbar or a shortcut, controlled or not. */
+  const selectTool = useCallback(
+    (id: ToolId) => {
+      setOwnToolId(id)
+      onToolChange?.(id)
+      setStatus(toolDefinition(id).hint)
+    },
+    [onToolChange],
+  )
 
   const context = useMemo<ToolContext>(
     () => ({
@@ -327,13 +356,25 @@ export function SketchEditor({
         return
       }
 
+      // Bare letters pick a tool, but only while the sketch is the surface on
+      // screen — the 3D view and the shell claim letters of their own.
+      if (active && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        const shortcutTool = toolForShortcut(event.key)
+        if (shortcutTool) {
+          event.preventDefault()
+          selectTool(shortcutTool)
+          redraw()
+          return
+        }
+      }
+
       if (event.key === 'Escape') setEditing(null)
       applyResult(tool.onKeyDown(event.key, context), true)
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [applyResult, context, redo, tool, undo])
+  }, [active, applyResult, context, redo, selectTool, tool, undo])
 
   /* ---------------------------------------------------------------------- */
   /* Dimensions and constraints                                              */
@@ -401,11 +442,8 @@ export function SketchEditor({
             className={`sketch__tool${entry.id === toolId ? ' sketch__tool--active' : ''}`}
             aria-pressed={entry.id === toolId}
             aria-label={entry.label}
-            title={`${entry.label} — ${entry.hint}`}
-            onClick={() => {
-              setToolId(entry.id)
-              setStatus(entry.hint)
-            }}
+            title={`${entry.label}${entry.shortcut ? ` (${entry.shortcut})` : ''} — ${entry.hint}`}
+            onClick={() => selectTool(entry.id)}
           >
             <span aria-hidden="true">{entry.icon}</span>
           </button>
