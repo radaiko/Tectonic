@@ -200,14 +200,20 @@ fn cap(body: &mut Body, section: &[Vec<VertexId>], reversed: bool) -> Option<usi
 pub fn tag_surface(body: &mut Body, faces: &[usize], surface: Surface) {
     let vertices = body.vertices.clone();
     for &index in faces {
-        let Some(face) = body.faces.get_mut(index) else {
-            continue;
-        };
-        let middle = face.centroid(&vertices);
-        let surface_normal = surface.normal_at(middle);
-        face.surface = surface;
-        face.flipped = surface_normal != Vec3::ZERO && surface_normal.dot(face.normal) < 0.0;
+        if let Some(face) = body.faces.get_mut(index) {
+            set_surface(face, surface, &vertices);
+        }
     }
+}
+
+/// Puts one face on a surface, keeping the side it faces: the face's winding
+/// already settled its outward direction, so all that is left is to record
+/// whether that runs with or against the surface's own normal.
+pub fn set_surface(face: &mut Face, surface: Surface, vertices: &[Vertex]) {
+    let middle = face.centroid(vertices);
+    let surface_normal = surface.normal_at(middle);
+    face.surface = surface;
+    face.flipped = surface_normal != Vec3::ZERO && surface_normal.dot(face.normal) < 0.0;
 }
 
 /// Turns a body the right way out if its faces came out wound inwards.

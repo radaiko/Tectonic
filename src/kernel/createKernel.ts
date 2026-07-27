@@ -1,38 +1,83 @@
 import type { IKernel } from './IKernel'
+import type { RustLoadOptions } from './rust/RustWasm'
 import { StubKernel } from './StubKernel'
 import type { WasmLoadOptions } from './wasm/WasmLoader'
 
-export interface CreateKernelOptions extends WasmLoadOptions {
+/** A backend that can be asked for, in the order `createKernel` tries them. */
+export type KernelBackend = 'rust' | 'opencascade' | 'stub'
+
+export interface CreateKernelOptions extends WasmLoadOptions, RustLoadOptions {
   /**
-   * Called when OpenCascade could not be brought up and the stub is standing in.
-   * The app shows this to the user; without a handler the reason is logged.
+   * Which backends to try, best first. Defaults to all three; narrowing it is
+   * how a caller pins the backend — tests do, and so does a user who wants the
+   * stub's speed over the kernel's accuracy.
+   */
+  readonly backends?: readonly KernelBackend[]
+  /**
+   * Called for each backend that could not be brought up, with the one that
+   * ended up standing in. The app shows this to the user; without a handler the
+   * reason is logged.
    */
   readonly onFallback?: (reason: string, cause: unknown) => void
-  /** Seam for tests: stands in for the dynamic import of the WASM kernel. */
+  /** Seam for tests: stands in for the dynamic import of the OpenCascade kernel. */
   readonly importKernel?: () => Promise<{ create(options: WasmLoadOptions): Promise<IKernel> }>
+  /** Seam for tests: stands in for the dynamic import of the Rust kernel. */
+  readonly importRustKernel?: () => Promise<{ create(options: RustLoadOptions): Promise<IKernel> }>
 }
 
+const DEFAULT_ORDER: readonly KernelBackend[] = ['rust', 'opencascade', 'stub']
+
 /**
- * The kernel the app should model with: OpenCascade when its WASM binary loads,
- * and the three.js stub when it does not.
+ * The kernel the app should model with.
  *
- * The import is dynamic so neither OpenCascade's 22 MB binary nor its glue code
- * reaches the main bundle — the browser fetches them as a separate chunk, and a
- * build that never calls this function never pays for them.
+ * Backends are tried best first and the first one that comes up wins: the Rust
+ * B-Rep kernel, then OpenCascade, then the three.js stub, which needs no binary
+ * and so always succeeds. Every attempt is separately guarded, so a machine that
+ * cannot run one of them still gets the next rather than the last.
+ *
+ * The imports are dynamic so neither binary reaches the main bundle — the
+ * browser fetches each as its own chunk, and a build that never calls this
+ * function never pays for either.
  */
 export async function createKernel(options: CreateKernelOptions = {}): Promise<IKernel> {
-  const { onFallback, importKernel, ...load } = options
-  try {
-    const module = importKernel
-      ? await importKernel()
-      : (await import('./OpenCascadeKernel')).OpenCascadeKernel
-    const kernel = await module.create(load)
-    await kernel.init()
-    return kernel
-  } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause)
-    if (onFallback) onFallback(reason, cause)
-    else console.warn('OpenCascade WASM failed to load, falling back to StubKernel', cause)
-    return new StubKernel()
+  const { backends = DEFAULT_ORDER, onFallback, importKernel, importRustKernel, ...load } = options
+
+  for (const backend of backends) {
+    if (backend === 'stub') return new StubKernel()
+    try {
+      const kernel = await start(backend, load, { importKernel, importRustKernel })
+      await kernel.init()
+      return kernel
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause)
+      if (onFallback) onFallback(`${LABELS[backend]} could not be loaded: ${reason}`, cause)
+      else console.warn(`${LABELS[backend]} failed to load, trying the next backend`, cause)
+    }
   }
+
+  return new StubKernel()
+}
+
+const LABELS: Record<KernelBackend, string> = {
+  rust: 'The Rust kernel',
+  opencascade: 'OpenCascade',
+  stub: 'The stub kernel',
+}
+
+async function start(
+  backend: Exclude<KernelBackend, 'stub'>,
+  load: WasmLoadOptions & RustLoadOptions,
+  seams: Pick<CreateKernelOptions, 'importKernel' | 'importRustKernel'>,
+): Promise<IKernel> {
+  if (backend === 'rust') {
+    const module = seams.importRustKernel
+      ? await seams.importRustKernel()
+      : (await import('./RustKernel')).RustKernel
+    return module.create(load)
+  }
+
+  const module = seams.importKernel
+    ? await seams.importKernel()
+    : (await import('./OpenCascadeKernel')).OpenCascadeKernel
+  return module.create(load)
 }

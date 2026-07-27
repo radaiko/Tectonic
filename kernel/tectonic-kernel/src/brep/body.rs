@@ -1,5 +1,6 @@
 //! Bodies — a complete B-Rep solid or shell.
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -540,6 +541,80 @@ impl Body {
         self.rebuild_topology();
     }
 
+    /// Adds a loop entry wherever one face's corner lands part-way along
+    /// another face's edge, so the two share an edge instead of crossing it.
+    ///
+    /// Cutting geometry leaves these T-junctions everywhere: a boolean splits
+    /// the facet it cuts through but not the untouched facet next door, so the
+    /// long edge and the two short ones that lie along it are three different
+    /// edges and none of them pairs up. The body is watertight to look at and
+    /// reports itself open. Inserting the corner into the long edge costs one
+    /// collinear point and makes the pairing come out.
+    pub fn heal_t_junctions(&mut self, tolerance: f64) {
+        if self.vertices.is_empty() || self.faces.is_empty() {
+            return;
+        }
+        let tolerance = tolerance.max(crate::math::EPSILON);
+        // Coarse enough that a long edge does not walk thousands of cells, fine
+        // enough that a cell holds a handful of points rather than all of them.
+        let cell = (self.bounding_box().diagonal() / 64.0).max(tolerance * 4.0);
+
+        let positions: Vec<Vec3> = self.vertices.iter().map(|v| v.position).collect();
+        let mut grid: HashMap<(i64, i64, i64), Vec<VertexId>> = HashMap::new();
+        for (id, &position) in positions.iter().enumerate() {
+            grid.entry(cell_of(position, cell)).or_default().push(id);
+        }
+
+        let mut inserted = 0usize;
+        for face in &mut self.faces {
+            for face_loop in &mut face.loops {
+                let count = face_loop.vertex_ids.len();
+                let mut rebuilt = Vec::with_capacity(count);
+                for index in 0..count {
+                    let start = face_loop.vertex_ids[index];
+                    let end = face_loop.vertex_ids[(index + 1) % count];
+                    rebuilt.push(start);
+
+                    let (from, to) = (positions[start], positions[end]);
+                    let span = to.sub(from);
+                    let length_squared = span.length_squared();
+                    if length_squared <= tolerance * tolerance {
+                        continue;
+                    }
+
+                    let mut landing: Vec<(f64, VertexId)> = Vec::new();
+                    for candidate in near_segment(&grid, cell, from, to) {
+                        if candidate == start || candidate == end {
+                            continue;
+                        }
+                        let point = positions[candidate];
+                        let along = point.sub(from).dot(span) / length_squared;
+                        if !(0.0..=1.0).contains(&along) {
+                            continue;
+                        }
+                        if from.lerp(to, along).distance(point) > tolerance {
+                            continue;
+                        }
+                        // Within tolerance of an end is that end, not a junction.
+                        if point.distance(from) <= tolerance || point.distance(to) <= tolerance {
+                            continue;
+                        }
+                        landing.push((along, candidate));
+                    }
+                    landing.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+                    landing.dedup_by_key(|entry| entry.1);
+                    inserted += landing.len();
+                    rebuilt.extend(landing.into_iter().map(|entry| entry.1));
+                }
+                face_loop.vertex_ids = rebuilt;
+            }
+        }
+
+        if inserted > 0 {
+            self.rebuild_topology();
+        }
+    }
+
     /// Drops faces with no area — the slivers a cut leaves behind.
     pub fn remove_degenerate_faces(&mut self, tolerance: f64) {
         let vertices = self.vertices.clone();
@@ -720,6 +795,53 @@ impl Default for Body {
     }
 }
 
+/// Which cell of a uniform grid a point falls in.
+fn cell_of(position: Vec3, cell: f64) -> (i64, i64, i64) {
+    (
+        (position.x / cell).floor() as i64,
+        (position.y / cell).floor() as i64,
+        (position.z / cell).floor() as i64,
+    )
+}
+
+/// Every vertex in a cell the segment passes through, or next to one.
+///
+/// Walking the segment cell by cell rather than filling its bounding box is
+/// what keeps a long thin edge cheap: a box across the model would sweep up
+/// most of the grid, and the edge only ever touches a line through it.
+fn near_segment(
+    grid: &HashMap<(i64, i64, i64), Vec<VertexId>>,
+    cell: f64,
+    from: Vec3,
+    to: Vec3,
+) -> Vec<VertexId> {
+    let steps = (from.distance(to) / cell).ceil().max(1.0) as usize;
+    let mut cells: Vec<(i64, i64, i64)> = Vec::new();
+    for step in 0..=steps {
+        let sample = from.lerp(to, step as f64 / steps as f64);
+        let key = cell_of(sample, cell);
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    cells.push((key.0 + dx, key.1 + dy, key.2 + dz));
+                }
+            }
+        }
+    }
+    cells.sort_unstable();
+    cells.dedup();
+
+    let mut found: Vec<VertexId> = cells
+        .into_iter()
+        .filter_map(|key| grid.get(&key))
+        .flatten()
+        .copied()
+        .collect();
+    found.sort_unstable();
+    found.dedup();
+    found
+}
+
 /// Hashes quantized coordinates into a short stable string.
 ///
 /// Quantizing to a micron before hashing is what makes the id survive a
@@ -777,6 +899,61 @@ mod tests {
             .map(|(id, vertex_ids)| Face::planar(id, vertex_ids, &vertices))
             .collect();
         Body::new(vertices, faces)
+    }
+
+    /// A unit box whose top face is split down the middle, leaving the four
+    /// walls meeting the split point part-way along their top edge.
+    fn box_with_a_split_lid() -> Body {
+        let mut body = unit_box(Vec3::ONE);
+        // Two extra points halfway along the top's front and back edges.
+        let front = body.add_vertex(Vec3::new(0.5, 0.0, 1.0));
+        let back = body.add_vertex(Vec3::new(0.5, 1.0, 1.0));
+        // Replace the single top face with the two halves it splits into.
+        body.faces.remove(1);
+        body.add_face(vec![4, front, back, 7]);
+        body.add_face(vec![front, 5, 6, back]);
+        body.rebuild_topology();
+        body
+    }
+
+    #[test]
+    fn a_t_junction_leaves_a_watertight_body_reporting_itself_open() {
+        let body = box_with_a_split_lid();
+        assert!((body.volume() - 1.0).abs() < TOL);
+        // The front wall's top edge runs the full width; the lid halves meet it
+        // at a point in the middle. Three edges lie along one line and none of
+        // them pairs up.
+        assert!(!body.is_solid());
+        assert!(!body.boundary_edges().is_empty());
+    }
+
+    #[test]
+    fn healing_a_t_junction_closes_the_body_without_moving_it() {
+        let mut body = box_with_a_split_lid();
+        let before = body.volume();
+        body.heal_t_junctions(TOLERANCE);
+
+        assert!(body.is_solid());
+        assert!(body.is_valid());
+        assert!(body.boundary_edges().is_empty());
+        assert!((body.volume() - before).abs() < TOL);
+        // Nothing moved: the split point was threaded into the walls' top edges,
+        // so those loops gained a corner and no vertex was added.
+        assert_eq!(body.vertices.len(), 10);
+        assert_eq!(body.faces[3].outer_loop().len(), 5);
+    }
+
+    #[test]
+    fn healing_a_body_with_nothing_to_heal_leaves_it_alone() {
+        let mut body = unit_box(Vec3::ONE);
+        let before = body.clone();
+        body.heal_t_junctions(TOLERANCE);
+        assert_eq!(body, before);
+
+        // And an empty body is not something to divide a grid over.
+        let mut empty = Body::empty();
+        empty.heal_t_junctions(TOLERANCE);
+        assert!(empty.is_empty());
     }
 
     #[test]

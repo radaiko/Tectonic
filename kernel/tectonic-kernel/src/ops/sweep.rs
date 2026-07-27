@@ -89,39 +89,18 @@ pub fn sweep(params: &SweepParams) -> KernelResult<Body> {
     }
 
     let plane = params.plane.orthonormalized();
-    let tangents = tangents_along(&spine);
     let profile = params.profile.normalized();
+    let stations = place_stations(&spine, &plane, params, OPERATION)?;
 
-    let mut frames = Vec::with_capacity(spine.len());
-    let (mut u, mut v) = match params.orientation {
-        SweepOrientation::Perpendicular => (plane.x_axis, plane.y_axis),
-        SweepOrientation::FollowPath => square_to(tangents[0], plane),
-    };
-    for (index, &tangent) in tangents.iter().enumerate() {
-        if params.orientation == SweepOrientation::FollowPath && index > 0 {
-            // Rotation-minimizing frames: carry the last section round by
-            // exactly the turn the path took, and no more. Rebuilding the frame
-            // from scratch at each station would let it spin about the path.
-            let turn = Quat::from_rotation_between(tangents[index - 1], tangent);
-            u = turn.rotate(u).normalize();
-            v = turn.rotate(v).normalize();
-        }
-        let twist = degrees_to_radians(params.twist_angle) * index as f64
-            / (spine.len() - 1).max(1) as f64;
-        let spun = Quat::from_axis_angle(tangent, twist);
-        frames.push((spun.rotate(u), spun.rotate(v)));
-    }
-
-    let sections: Vec<Section> = spine
+    let sections: Vec<Section> = stations
         .iter()
-        .zip(frames.iter())
-        .map(|(&station, &(u, v))| {
+        .map(|station| {
             profile
                 .loops()
                 .map(|face_loop| {
                     face_loop
                         .iter()
-                        .map(|&point| station.add(u.scale(point.x)).add(v.scale(point.y)))
+                        .map(|&point| station.place(point.x, point.y))
                         .collect()
                 })
                 .collect()
@@ -141,6 +120,109 @@ pub fn sweep(params: &SweepParams) -> KernelResult<Body> {
     }
     Ok(body)
 }
+
+/// Where one cross-section sits, and how a profile point maps into it.
+///
+/// At the ends a station is simply an origin and a pair of axes. At a corner it
+/// also carries the direction the section is pushed along and the plane it has
+/// to land in, which together mitre it — see [`place_stations`].
+#[derive(Debug, Clone, Copy)]
+struct Station {
+    origin: Vec3,
+    u: Vec3,
+    v: Vec3,
+    /// The leg the section is carried along into the mitre plane, and that
+    /// plane's normal. `None` at the two ends, which are cut square.
+    mitre: Option<(Vec3, Vec3)>,
+}
+
+impl Station {
+    fn place(&self, x: f64, y: f64) -> Vec3 {
+        let offset = self.u.scale(x).add(self.v.scale(y));
+        let Some((along, normal)) = self.mitre else {
+            return self.origin.add(offset);
+        };
+        // Slide the square section along its own leg until it meets the mitre
+        // plane. The section starts perpendicular to `along`, so this is exactly
+        // the leg's constant cross-section cut at the corner.
+        let slide = -offset.dot(normal) / along.dot(normal);
+        self.origin.add(offset).add(along.scale(slide))
+    }
+}
+
+/// A section for every point of the spine.
+///
+/// The frame is rotation-minimizing: each leg's axes are the previous leg's
+/// carried round by exactly the turn the path took, so the profile does not spin
+/// about the path as it goes. At an interior point the two legs disagree about
+/// which way is square, and the section is mitred into the plane that bisects
+/// them — without that the corner pinches to the section's own width instead of
+/// staying a constant cross-section all the way round.
+fn place_stations(
+    spine: &[Vec3],
+    plane: &PlaneFrame,
+    params: &SweepParams,
+    operation: &str,
+) -> KernelResult<Vec<Station>> {
+    let legs: Vec<Vec3> = spine
+        .windows(2)
+        .map(|pair| pair[1].sub(pair[0]).normalize())
+        .collect();
+    let bisectors = tangents_along(spine);
+    let twist_total = degrees_to_radians(params.twist_angle);
+    let last = spine.len() - 1;
+
+    // The axes of each leg, carried forward from the first.
+    let mut leg_frames = Vec::with_capacity(legs.len());
+    let (mut u, mut v) = match params.orientation {
+        SweepOrientation::Perpendicular => (plane.x_axis, plane.y_axis),
+        SweepOrientation::FollowPath => square_to(legs[0], *plane),
+    };
+    leg_frames.push((u, v));
+    for index in 1..legs.len() {
+        if params.orientation == SweepOrientation::FollowPath {
+            let turn = Quat::from_rotation_between(legs[index - 1], legs[index]);
+            u = turn.rotate(u).normalize();
+            v = turn.rotate(v).normalize();
+        }
+        leg_frames.push((u, v));
+    }
+
+    let mut stations = Vec::with_capacity(spine.len());
+    for (index, &origin) in spine.iter().enumerate() {
+        // A station belongs to the leg arriving at it; the first has only the
+        // one leaving.
+        let leg = index.saturating_sub(1);
+        let (u, v) = leg_frames[leg];
+        let along = legs[leg];
+        let twist = twist_total * index as f64 / last as f64;
+        let spun = Quat::from_axis_angle(along, twist);
+        let (u, v) = (spun.rotate(u), spun.rotate(v));
+
+        let interior = index > 0 && index < last;
+        let mitre = if interior && params.orientation == SweepOrientation::FollowPath {
+            let normal = bisectors[index];
+            let lean = along.dot(normal);
+            // The cosine of half the turn. As the path doubles back it falls to
+            // zero and the mitre runs away to infinity.
+            if lean < MITRE_LIMIT {
+                bail!(
+                    operation,
+                    "the path turns back on itself at point {index}, too sharply for the section to follow"
+                );
+            }
+            Some((along, normal))
+        } else {
+            None
+        };
+        stations.push(Station { origin, u, v, mitre });
+    }
+    Ok(stations)
+}
+
+/// How far a corner may be pushed before the mitre is refused: a turn of a
+/// little over 170 degrees, where the section is already stretched elevenfold.
+const MITRE_LIMIT: f64 = 0.087;
 
 /// Drops points that repeat the one before them, which would otherwise leave a
 /// station with no direction to face.
@@ -240,6 +322,29 @@ mod tests {
         let bounds = body.bounding_box();
         assert!((bounds.max.x - 10.0).abs() < TOL);
         assert!((bounds.max.z - 11.0).abs() < TOL);
+    }
+
+    #[test]
+    fn a_mitred_corner_keeps_the_cross_section_constant() {
+        // Whatever the corner does, the solid is still the profile's area
+        // dragged along the path: the mitre gives back on the outside exactly
+        // what it takes off the inside.
+        for turn in [Vec3::new(6.0, 0.0, 8.0), Vec3::new(0.0, 9.0, 0.0)] {
+            let corner = Vec3::new(0.0, 0.0, 10.0);
+            let path = vec![Vec3::ZERO, corner, corner.add(turn)];
+            let body = sweep(&SweepParams::new(square(2.0), path)).unwrap();
+            let length = 10.0 + turn.length();
+            assert!((body.volume() - 4.0 * length).abs() < 1e-6, "{}", body.volume());
+        }
+    }
+
+    #[test]
+    fn a_path_that_doubles_back_is_refused() {
+        // The section would have to stretch without limit to bridge the two
+        // legs, so the sweep is refused rather than built inside out.
+        let path = vec![Vec3::ZERO, Vec3::new(0.0, 0.0, 10.0), Vec3::new(0.5, 0.0, 0.0)];
+        let error = sweep(&SweepParams::new(square(2.0), path)).unwrap_err();
+        assert!(error.message.contains("turns back on itself"), "{}", error.message);
     }
 
     #[test]

@@ -1,0 +1,17 @@
+{
+  "name": "tectonic-wasm",
+  "type": "module",
+  "description": "WebAssembly bindings for the Tectonic geometric kernel.",
+  "version": "0.1.0",
+  "license": "MIT",
+  "files": [
+    "tectonic_wasm_bg.wasm",
+    "tectonic_wasm.js",
+    "tectonic_wasm.d.ts"
+  ],
+  "main": "tectonic_wasm.js",
+  "types": "tectonic_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

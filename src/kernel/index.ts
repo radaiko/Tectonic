@@ -38,7 +38,17 @@ export { StubKernel, toBufferGeometry, toMeshData } from './StubKernel'
 // importing it eagerly would pull the WASM module into the main bundle. Reach it
 // through `createKernel`, which imports it on demand.
 export type { OpenCascadeKernel } from './OpenCascadeKernel'
-export type { CreateKernelOptions } from './createKernel'
+// The Rust kernel is absent as a value for the same reason: `createKernel`
+// imports it on demand so its WASM binary stays out of the main bundle.
+export type { RustKernel } from './RustKernel'
+export type {
+  RustLoadOptions,
+  RustWasmExports,
+  RustWasmInput,
+  RustWasmModule,
+} from './rust/RustWasm'
+export { loadedRustKernel, loadRustKernel, resetRustKernel, rustError } from './rust/RustWasm'
+export type { CreateKernelOptions, KernelBackend } from './createKernel'
 export { createKernel } from './createKernel'
 export type {
   KernelLoadListener,

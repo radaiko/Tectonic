@@ -1,0 +1,28 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const bodyFromMesh: (a: number, b: number) => [number, number, number, number];
+export const booleanIntersect: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const booleanSubtract: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const booleanUnion: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const boundingBox: (a: number, b: number) => [number, number, number, number];
+export const chamfer: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const extrude: (a: number, b: number) => [number, number, number, number];
+export const fillet: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const isSolid: (a: number, b: number) => [number, number, number];
+export const loft: (a: number, b: number) => [number, number, number, number];
+export const massProperties: (a: number, b: number) => [number, number, number, number];
+export const name: () => [number, number];
+export const revolve: (a: number, b: number) => [number, number, number, number];
+export const shell: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const simplify: (a: number, b: number, c: number) => [number, number, number, number];
+export const sweep: (a: number, b: number) => [number, number, number, number];
+export const topology: (a: number, b: number) => [number, number, number, number];
+export const triangulate: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const version: () => [number, number];
+export const __wbindgen_externrefs: WebAssembly.Table;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_start: () => void;

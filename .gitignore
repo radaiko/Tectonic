@@ -6,3 +6,6 @@ coverage/
 .prompt-*.md
 kernel/target/
 kernel/Cargo.lock
+# The generated WASM package is checked in: it is what the app ships, and a
+# clone without a Rust toolchain still has to type-check, build and test.
+!kernel/tectonic-wasm/pkg/*.wasm

@@ -109,6 +109,7 @@ impl Plane {
 /// `x_axis` and `y_axis` are unit and perpendicular; their cross product is the
 /// normal, which is also the direction an extrusion takes by default.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlaneFrame {
     pub origin: Vec3,
     pub x_axis: Vec3,
