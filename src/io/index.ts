@@ -44,6 +44,56 @@ export { exportPdfDrawing, formatScale } from './PdfDrawingExporter'
 export type { PdfDrawingOptions } from './PdfDrawingExporter'
 export { importStep } from './StepImporter'
 export type { StepEntity, StepHeader, StepImportOptions, StepImportResult } from './StepImporter'
+export {
+  CAD_EXTENSIONS,
+  CAD_FORMATS,
+  DEFAULT_PLACEHOLDER_SIZE,
+  cadFormat,
+  detectCadFormat,
+  detectContainer,
+  importCad,
+  importCadFile,
+  isCadFileName,
+  placeholderMesh,
+} from './CadImportService'
+export type {
+  CadConfidence,
+  CadContainer,
+  CadDetection,
+  CadFormatId,
+  CadFormatSpec,
+  CadImportMetadata,
+  CadImportOptions,
+  CadImportResult,
+  CadTranslator,
+} from './CadImportService'
+
+export {
+  DEFAULT_JPEG_QUALITY,
+  IMAGE_MEDIA,
+  captureViewportImage,
+  dataUrlBytes,
+  downloadImage,
+  effectiveBackground,
+  imageFileName,
+  resolveImageSize,
+} from './ImageExporter'
+export type {
+  CapturedImage,
+  ImageBackground,
+  ImageExportOptions,
+  ImageFormat,
+  ImageResolution,
+  ViewportRenderer,
+} from './ImageExporter'
+
+export { exportHtml, htmlViewerModel } from './HtmlExporter'
+export type { HtmlExportOptions, HtmlViewerModel, HtmlViewerPart } from './HtmlExporter'
+export { exportThreeDPdf, annotationRect, defaultView } from './ThreeDPdfExporter'
+export type { ThreeDPdfOptions, ThreeDView } from './ThreeDPdfExporter'
+export { encodeU3d, readU3dBlocks } from './u3d'
+export type { U3dBlock, U3dMesh, U3dOptions } from './u3d'
+
 export { ORTHO_VIEWS, viewSegments } from './orthoViews'
 export type { DrawingSegment, ViewAxes, ViewName } from './orthoViews'
 export { readZip, writeZip } from './zip'

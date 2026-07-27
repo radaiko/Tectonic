@@ -63,18 +63,34 @@ export type { GifFrame, GifOptions } from './gif'
 
 export {
   DEFAULT_VIDEO_MIME,
+  MP4_H264_MIME,
+  MP4_MIME,
+  VIDEO_FRAME_RATES,
+  VIDEO_MIME_CANDIDATES,
+  WEBM_VP9_MIME,
+  canRecordMp4,
   canRecordVideo,
   captureFrames,
+  defaultMimeSupport,
   framesToGif,
+  isVideoFrameRate,
+  recordMp4,
   recordVideo,
+  recordVideoFile,
+  supportedVideoMime,
+  videoExtension,
 } from './capture'
 export type {
   CaptureOptions,
   CapturedFrame,
   FrameSource,
+  MimeSupportTest,
   RecorderLike,
+  RecordingProgress,
   StreamSource,
+  VideoFrameRate,
   VideoOptions,
+  VideoResult,
 } from './capture'
 
 export { AnimationPanel, EXPORT_FORMATS, PLAYBACK_SPEEDS } from './AnimationUI'
