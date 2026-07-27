@@ -308,7 +308,16 @@ export interface HoleCalloutAnnotation extends AnnotationBase {
   readonly countersinkAngle?: number
 }
 
-export const BALLOON_SHAPES = ['circle', 'hexagon', 'square', 'triangle'] as const
+export const BALLOON_SHAPES = [
+  'circle',
+  'hexagon',
+  'square',
+  'triangle',
+  /** A circle with a line under it, for the quantity or a find number. */
+  'circle-line',
+  /** A circle split across the middle: item number above, quantity below. */
+  'circle-split',
+] as const
 
 export type BalloonShape = (typeof BALLOON_SHAPES)[number]
 

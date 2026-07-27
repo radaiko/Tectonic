@@ -1,0 +1,232 @@
+.material-browser,
+.material-editor,
+.appearance-picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 0.4rem;
+  overflow: auto;
+}
+
+.material-browser__title,
+.material-editor__title,
+.appearance-picker__title {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.material-browser__target {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.material-browser__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.material-browser__search {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.material-browser__search,
+.material-browser__category,
+.material-editor__row input,
+.material-editor__row select,
+.material-editor__field input {
+  padding: 0.15rem 0.3rem;
+  font: inherit;
+  font-size: 0.76rem;
+  color: var(--text-primary);
+  background: var(--surface-sunken, #1c2128);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 3px;
+}
+
+.material-browser__favorites {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.material-browser__empty,
+.material-editor__empty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.material-browser__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: auto;
+}
+
+.material-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.2rem;
+  border-radius: 3px;
+}
+
+.material-row--selected {
+  background: var(--surface-selected, #1f6feb33);
+}
+
+.material-row__swatch {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: none;
+  border: 1px solid var(--border, #30363d);
+  border-radius: 2px;
+}
+
+.material-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.material-row__density {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.material-row__favorite,
+.material-row__assign {
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.material-row__assign {
+  padding: 0.05rem 0.35rem;
+  color: var(--text-primary);
+  background: var(--surface-raised, #21262d);
+  border: 1px solid var(--border, #30363d);
+  border-radius: 3px;
+}
+
+.material-editor__row {
+  display: grid;
+  grid-template-columns: 1fr 8rem;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.material-editor__fields {
+  margin: 0.3rem 0 0;
+}
+
+.material-editor__field {
+  display: grid;
+  grid-template-columns: 1fr 8rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0;
+}
+
+.material-editor__field dt {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.material-editor__field dd {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  margin: 0;
+  min-width: 0;
+}
+
+.material-editor__field input {
+  min-width: 0;
+  flex: 1;
+}
+
+.material-editor__unit {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.material-editor__delete {
+  align-self: flex-start;
+  margin-top: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  font: inherit;
+  font-size: 0.76rem;
+  color: #f85149;
+  background: none;
+  border: 1px solid #f8514966;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.appearance-picker__group-title {
+  margin: 0.4rem 0 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.appearance-picker__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.appearance-swatch {
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 1px solid var(--border, #30363d);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.appearance-swatch--selected {
+  outline: 2px solid var(--accent, #1f6feb);
+  outline-offset: 1px;
+}
+
+.appearance-picker__custom {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.6rem;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
