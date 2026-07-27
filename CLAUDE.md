@@ -13,7 +13,7 @@
 - **UI Framework:** React + TypeScript
 - **2D Rendering:** Canvas 2D
 - **3D Rendering:** three.js
-- **B-Rep Kernel:** OpenCascade WASM (or custom WASM kernel)
+- **B-Rep Kernel:** Rust WASM kernel (via wasm-pack) with TypeScript StubKernel fallback
 - **Build:** Vite
 - **Testing:** Vitest with coverage
 - **Coverage target:** 90% line coverage minimum
@@ -24,17 +24,33 @@ src/
 ├── app/          App shell, start screen, routing
 ├── ui/           React components, panels, toolbars, ribbon
 ├── domain/       Pure domain models (no UI dependency)
-├── kernel/       WASM kernel bridge (geometry engine)
-├── sketch/       2D sketch system (entities, constraints)
+├── kernel/       Rust WASM kernel bridge (IKernel + RustKernel + StubKernel)
+├── sketch/       2D sketch system (entities, constraints, solver)
 ├── features/     Feature engine (extrude, revolve, fillet, etc.)
 ├── sheetmetal/   Sheet metal environment
 ├── assembly/     Assembly modeling with mates
+├── drawing/      2D drawing workspace
 ├── surface/      Surface modeling
-├── solver/       Constraint solver
-├── io/           I/O pipelines (.tectonic, STEP, STL, DXF, etc.)
-└── 3d/           3D rendering (three.js viewport)
+├── weldments/    Structural frames
+├── library/      Standard content library
+├── recognition/  Feature recognition
+├── automation/   Design automation
+├── motion/       Motion/animation
+├── mesh/         Mesh editing
+├── form/         Sculpt/subdivision modeling
+├── studio/       Part Studios
+├── pmi/          3D annotations
+├── material/     Materials library
+├── config/       Configurations/variants
+├── analysis/     Measure & analysis tools
+├── diff/         Visual diff/compare
+├── performance/  Large assembly performance
+├── io/           I/O pipelines (all formats)
+├── 3d/           3D rendering (three.js viewport)
+├── view/         Multi-viewport, view cube, visual styles
+└── solver/       Constraint solver
 tests/            Tests mirroring src structure
-docs/             Architecture and design docs
+kernel/           Rust geometric kernel source
 ```
 
 ## Core Design Decisions
