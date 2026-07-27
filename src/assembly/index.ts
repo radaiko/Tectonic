@@ -125,3 +125,80 @@ export {
 
 export { AssemblyEditor } from './AssemblyEditor'
 export type { AssemblyEditorProps } from './AssemblyEditor'
+
+export {
+  DERIVATION_KINDS,
+  DERIVED_EDIT_TYPES,
+  DerivationError,
+  DerivationKind,
+  LINK_STATES,
+  LinkState,
+  UPDATE_POLICIES,
+  UpdatePolicy,
+  applyEdits,
+  cloneSnapshot,
+  emptySnapshot,
+  hashString,
+  isUpdatePolicy,
+  linkStateFor,
+  revisionOf,
+  snapshotRevision,
+} from './DerivedComponent'
+export type {
+  ApplyEditsResult,
+  DerivedComponentInfo,
+  DerivedEdit,
+  EditFailure,
+  ModelSnapshot,
+} from './DerivedComponent'
+
+export { DerivationGraph, DerivedPart } from './DerivedPart'
+export type {
+  DerivationRebuildReport,
+  DerivedPartInit,
+  DerivedPartJSON,
+  DerivedRebuildResult,
+} from './DerivedPart'
+
+export {
+  LinkedComponent,
+  LinkedComponentRegistry,
+  directoryOf,
+  fileName,
+  normalizePath,
+  relativePath,
+  resolveRelativePath,
+} from './LinkedComponent'
+export type {
+  ExternalDocumentLoader,
+  LinkRefreshReport,
+  LinkReloadResult,
+  LinkedComponentInit,
+  LinkedComponentJSON,
+  LoadedExternalDocument,
+  RefreshOptions,
+  RevisionProbe,
+} from './LinkedComponent'
+
+export {
+  REFERENCE_KINDS,
+  InContextPart,
+  ReferenceKind,
+  TopDownDesign,
+  geometryMatches,
+} from './TopDownDesign'
+export type {
+  CapturedGeometry,
+  CreateInContextOptions,
+  CreateInContextResult,
+  ExternalReference,
+  ExternalReferenceJSON,
+  GeometryResolver,
+  InContextPartInit,
+  InContextPartJSON,
+  ReferenceUpdateReport,
+  TopDownUpdateReport,
+} from './TopDownDesign'
+
+export { DerivedBadge, DerivedTree, derivationInfo } from './DerivedUI'
+export type { DerivedBadgeProps, DerivedTreeProps } from './DerivedUI'
