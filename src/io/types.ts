@@ -1,5 +1,4 @@
 import type { MeshData } from '../domain/MeshData'
-import type { LengthUnit } from '../domain/Document'
 
 /**
  * Shared vocabulary for the import/export pipelines. Everything here is plain
@@ -62,19 +61,10 @@ export interface NamedMesh {
   readonly smooth?: boolean
 }
 
-/** Millimetres per unit, for every unit the document can be expressed in. */
-export const MILLIMETRES_PER_UNIT: Readonly<Record<LengthUnit, number>> = {
-  mm: 1,
-  cm: 10,
-  m: 1000,
-  in: 25.4,
-  ft: 304.8,
-}
-
-/** Factor that converts a length in `from` to the same length in `to`. */
-export function unitScale(from: LengthUnit, to: LengthUnit): number {
-  return MILLIMETRES_PER_UNIT[from] / MILLIMETRES_PER_UNIT[to]
-}
+// The unit table belongs to the domain — the drawing sheet needs it as much as
+// the exporters do — and is re-exported here so the io pipelines keep reading
+// it from one place.
+export { MILLIMETRES_PER_UNIT, unitScale } from '../domain/units'
 
 /** Formats a number without exponent notation and without trailing zeroes. */
 export function formatNumber(value: number, precision = 6): number | string {
