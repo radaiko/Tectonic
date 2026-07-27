@@ -288,6 +288,78 @@ export interface IKernel {
   dispose(shape: ShapeHandle): void
 }
 
+/** Mass and inertia of a solid, taken at unit density. */
+export interface MassProperties {
+  readonly volume: number
+  readonly surfaceArea: number
+  readonly centerOfMass: Vec3
+  /**
+   * Matrix of inertia about the centre of mass, row-major 3×3 (nine entries).
+   * Symmetric, so `[1] === [3]`, `[2] === [6]` and `[5] === [7]`.
+   */
+  readonly inertia: readonly number[]
+}
+
+/**
+ * Where a named face sits and what it is made of. This is what turns a click in
+ * the viewport into one of {@link Topology}'s ids: the picker matches on geometry,
+ * the feature stores the id.
+ */
+export interface FaceInfo {
+  readonly id: string
+  /** Area-weighted centre of the face's surface, in world space. */
+  readonly centroid: Vec3
+  readonly area: number
+  /** Outward unit normal at the middle of the face's parameter range. */
+  readonly normal: Vec3
+  /** The underlying surface: "plane", "cylinder", "bspline" and so on. */
+  readonly kind: string
+}
+
+/** Where a named edge sits and what curve it follows. */
+export interface EdgeInfo {
+  readonly id: string
+  /** Midpoint by arc length, in world space. */
+  readonly midpoint: Vec3
+  readonly length: number
+  /** The underlying curve: "line", "circle", "bspline" and so on. */
+  readonly kind: string
+}
+
+/**
+ * The questions only a true B-Rep backend can answer honestly. A tessellation
+ * engine can guess at volume from its triangles but cannot say whether a solid is
+ * watertight, so these sit outside {@link IKernel} and callers feature-detect
+ * with {@link isBRepKernel} instead of assuming.
+ */
+export interface IBRepKernel extends IKernel {
+  massProperties(shape: ShapeHandle): Promise<MassProperties>
+  /** The shape's faces, as handles that can be tessellated on their own. */
+  faces(shape: ShapeHandle): Promise<ShapeHandle[]>
+  edges(shape: ShapeHandle): Promise<ShapeHandle[]>
+  /** Face geometry, in the same order and under the same ids as {@link topology}. */
+  faceInfo(shape: ShapeHandle): Promise<readonly FaceInfo[]>
+  /** Edge geometry, in the same order and under the same ids as {@link topology}. */
+  edgeInfo(shape: ShapeHandle): Promise<readonly EdgeInfo[]>
+  /** True when the shape bounds a volume rather than being a loose shell. */
+  isSolid(shape: ShapeHandle): Promise<boolean>
+  /** True when the topology passes the kernel's own consistency checks. */
+  isValid(shape: ShapeHandle): Promise<boolean>
+  /** Gives a surface body walls, turning it into a solid. */
+  thicken(shape: ShapeHandle, thickness: number): Promise<ShapeHandle>
+  /** Joins surfaces along shared edges into one shell, closing it if it can. */
+  stitch(shapes: readonly ShapeHandle[]): Promise<ShapeHandle>
+}
+
+export function isBRepKernel(kernel: IKernel): kernel is IBRepKernel {
+  const candidate = kernel as Partial<IBRepKernel>
+  return (
+    typeof candidate.massProperties === 'function' &&
+    typeof candidate.faces === 'function' &&
+    typeof candidate.isSolid === 'function'
+  )
+}
+
 /** Thrown when a kernel cannot carry out a requested operation. */
 export class KernelError extends Error {
   readonly operation: string
