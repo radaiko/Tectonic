@@ -75,3 +75,5 @@ export {
   minimumDistanceBetweenTriangles,
 } from './MinimumDistance'
 export type { MinimumDistanceResult } from './MinimumDistance'
+
+export * from './advanced'

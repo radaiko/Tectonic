@@ -1,0 +1,141 @@
+.analysis-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+  font-size: 0.8rem;
+}
+
+.analysis-panel__title {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.analysis-panel__toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.analysis-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.analysis-toggle__label {
+  flex: 1;
+}
+
+.analysis-toggle__hint {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.analysis-panel__results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.analysis-result {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.35rem 0.45rem;
+}
+
+.analysis-result__heading {
+  margin: 0 0 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.analysis-result__stats {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0 0.5rem;
+  margin: 0;
+}
+
+.analysis-result__stats dt {
+  color: var(--text-muted);
+}
+
+.analysis-result__stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis-result__warning {
+  margin: 0.25rem 0 0;
+  color: var(--danger, #d24);
+}
+
+.analysis-legend {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.analysis-legend__row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.analysis-legend__swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  flex: none;
+}
+
+.analysis-legend__label {
+  flex: 1;
+}
+
+.analysis-legend__range,
+.analysis-legend__count {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis-overlay {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border: 1px solid var(--border);
+  font-size: 0.72rem;
+  pointer-events: none;
+}
+
+.analysis-overlay__line {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis-overlay__name {
+  color: var(--text-muted);
+}
