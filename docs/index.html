@@ -1,0 +1,1862 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tectonic — browser-based parametric CAD</title>
+    <meta
+      name="description"
+      content="Tectonic is a browser-based parametric 2D/3D CAD system: sketches with constraints, a parametric feature tree, sheet metal, assemblies, drawings, and a Rust WASM geometric kernel."
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta property="og:title" content="Tectonic — browser-based parametric CAD" />
+    <meta
+      property="og:description"
+      content="Sketch, constrain, extrude. A parametric CAD system that runs in the browser, with a Rust WASM geometric kernel and no cloud, no accounts, no storage."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230e1116'/%3E%3Cpath d='M6 22h20M6 22V8l10 6 10-6v14' fill='none' stroke='%23ff9142' stroke-width='2'/%3E%3C/svg%3E"
+    />
+
+    <style>
+      /* ------------------------------------------------------------------
+         Tokens. The palette is lifted from a CAD viewport: graphite ground,
+         orange for the selected thing, construction blue for everything that
+         is only there to measure or align.
+         ------------------------------------------------------------------ */
+      :root {
+        --ground: #0e1116;
+        --panel: #141a21;
+        --panel-lift: #1a212a;
+        --line: #263039;
+        --line-soft: #1b232c;
+        --text: #ccd6e0;
+        --text-dim: #7d8b99;
+        --text-faint: #56636f;
+        --accent: #ff9142;
+        --accent-dim: #a85c26;
+        --construct: #4aa8d8;
+
+        --display:
+          'Helvetica Neue', 'Segoe UI', Roboto, 'Arial Narrow', Arial, sans-serif;
+        --body:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+          sans-serif;
+        --mono:
+          ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas,
+          monospace;
+
+        --gutter: clamp(1.25rem, 4vw, 3.5rem);
+        --measure: 1180px;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 5.5rem;
+      }
+
+      body {
+        margin: 0;
+        background-color: var(--ground);
+        /* Drafting grid: minor squares, major every eighth, both barely there. */
+        background-image:
+          linear-gradient(rgba(74, 168, 216, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(74, 168, 216, 0.05) 1px, transparent 1px),
+          linear-gradient(rgba(74, 168, 216, 0.028) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(74, 168, 216, 0.028) 1px, transparent 1px);
+        background-size:
+          96px 96px,
+          96px 96px,
+          12px 12px,
+          12px 12px;
+        color: var(--text);
+        font-family: var(--body);
+        font-size: 16px;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration-color: rgba(255, 145, 66, 0.35);
+        text-underline-offset: 3px;
+      }
+      a:hover {
+        text-decoration-color: var(--accent);
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+
+      code {
+        font-family: var(--mono);
+        font-size: 0.875em;
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* Shell                                                            */
+      /* ---------------------------------------------------------------- */
+
+      .wrap {
+        max-width: var(--measure);
+        margin: 0 auto;
+        padding-inline: var(--gutter);
+      }
+
+      .skip {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        background: var(--accent);
+        color: #10141a;
+        padding: 0.5rem 1rem;
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        z-index: 20;
+      }
+      .skip:focus {
+        left: 0;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: rgba(14, 17, 22, 0.88);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--line-soft);
+      }
+
+      .topbar-in {
+        max-width: var(--measure);
+        margin: 0 auto;
+        padding: 0.7rem var(--gutter);
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+      }
+
+      .brand {
+        font-family: var(--display);
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        font-size: 0.95rem;
+        color: var(--text);
+        text-decoration: none;
+        display: flex;
+        align-items: baseline;
+        gap: 0.55rem;
+      }
+      .brand::before {
+        content: '';
+        width: 9px;
+        height: 9px;
+        background: var(--accent);
+        transform: rotate(45deg);
+        display: inline-block;
+      }
+
+      .topnav {
+        display: flex;
+        gap: 1.4rem;
+        margin-left: auto;
+        flex-wrap: wrap;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+      .topnav a {
+        color: var(--text-dim);
+        text-decoration: none;
+        padding-bottom: 2px;
+        border-bottom: 1px solid transparent;
+      }
+      .topnav a:hover {
+        color: var(--text);
+        border-bottom-color: var(--accent);
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* Hero — the sketch that drives the solid                          */
+      /* ---------------------------------------------------------------- */
+
+      .hero {
+        padding-block: clamp(3rem, 8vw, 6rem) clamp(2.5rem, 6vw, 4.5rem);
+        display: grid;
+        grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+        gap: clamp(2rem, 5vw, 4rem);
+        align-items: center;
+      }
+
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--construct);
+        margin: 0 0 1.4rem;
+      }
+
+      .hero h1 {
+        font-family: var(--display);
+        font-size: clamp(2.6rem, 6.4vw, 4.3rem);
+        line-height: 0.98;
+        letter-spacing: -0.028em;
+        font-weight: 700;
+        margin: 0 0 1.25rem;
+      }
+      .hero h1 em {
+        font-style: normal;
+        color: var(--accent);
+      }
+
+      .hero p {
+        font-size: 1.075rem;
+        color: var(--text-dim);
+        max-width: 46ch;
+        margin: 0 0 2rem;
+      }
+
+      .cta-row {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        padding: 0.7rem 1.3rem;
+        border: 1px solid var(--line);
+        color: var(--text);
+        text-decoration: none;
+        background: var(--panel);
+        transition:
+          border-color 0.15s ease,
+          color 0.15s ease,
+          background 0.15s ease;
+      }
+      .btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .btn.is-primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #10141a;
+        font-weight: 600;
+      }
+      .btn.is-primary:hover {
+        background: #ffa561;
+        border-color: #ffa561;
+        color: #10141a;
+      }
+
+      .hero-figure {
+        min-width: 0;
+      }
+      .hero-figure svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .screenshots {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+        margin: 2rem 0;
+        justify-content: center;
+      }
+      .screenshots figure {
+        margin: 0;
+        flex: 1 1 400px;
+        max-width: 600px;
+      }
+      .screenshots img {
+        width: 100%;
+        border: 1px solid #2a2d35;
+        border-radius: 8px;
+      }
+      .screenshots figcaption {
+        text-align: center;
+        color: #8b8fa3;
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+      }
+
+      /* SVG line vocabulary, straight from a drawing sheet. */
+      .g-object {
+        fill: none;
+        stroke: var(--text);
+        stroke-width: 2;
+        stroke-linejoin: round;
+      }
+      .g-hidden {
+        fill: none;
+        stroke: var(--text-faint);
+        stroke-width: 1.25;
+        stroke-dasharray: 7 5;
+      }
+      .g-dim {
+        fill: none;
+        stroke: var(--construct);
+        stroke-width: 1;
+      }
+      .g-face {
+        fill: rgba(255, 145, 66, 0.07);
+        stroke: none;
+      }
+      .g-face-top {
+        fill: rgba(255, 145, 66, 0.16);
+        stroke: none;
+      }
+      .g-profile {
+        fill: rgba(74, 168, 216, 0.07);
+        stroke: var(--accent);
+        stroke-width: 2;
+      }
+      .g-text {
+        font-family: var(--mono);
+        font-size: 13px;
+        fill: var(--construct);
+      }
+      .g-note {
+        font-family: var(--mono);
+        font-size: 13px;
+        fill: var(--accent);
+        letter-spacing: 0.08em;
+      }
+      .g-glyph {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 1.5;
+      }
+
+      /* One orchestrated load: the profile draws, the solid rises out of it. */
+      .draw {
+        stroke-dasharray: 1400;
+        stroke-dashoffset: 1400;
+        animation: draw 1.1s cubic-bezier(0.5, 0, 0.2, 1) forwards;
+      }
+      .fade {
+        opacity: 0;
+        animation: fade 0.6s ease forwards;
+      }
+      .rise {
+        opacity: 0;
+        animation: rise 0.7s cubic-bezier(0.3, 0, 0.2, 1) forwards;
+      }
+      .d1 {
+        animation-delay: 0.15s;
+      }
+      .d2 {
+        animation-delay: 0.75s;
+      }
+      .d3 {
+        animation-delay: 1s;
+      }
+      .d4 {
+        animation-delay: 1.3s;
+      }
+
+      @keyframes draw {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      @keyframes fade {
+        to {
+          opacity: 1;
+        }
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(14px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* Spec strip                                                       */
+      /* ---------------------------------------------------------------- */
+
+      .specs {
+        border-block: 1px solid var(--line-soft);
+        background: rgba(20, 26, 33, 0.6);
+      }
+      .specs-in {
+        max-width: var(--measure);
+        margin: 0 auto;
+        padding-inline: var(--gutter);
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+      }
+      .spec {
+        padding: 1.35rem 1.25rem 1.35rem 0;
+        border-left: 1px solid var(--line-soft);
+        padding-left: 1.25rem;
+      }
+      .spec:first-child {
+        border-left: 0;
+        padding-left: 0;
+      }
+      .spec b {
+        display: block;
+        font-family: var(--display);
+        font-size: 1.65rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        line-height: 1.1;
+      }
+      .spec span {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* Section heading — the signature: every heading is dimensioned    */
+      /* ---------------------------------------------------------------- */
+
+      .band {
+        padding-block: clamp(3rem, 7vw, 5rem);
+      }
+      .band-alt {
+        background: rgba(20, 26, 33, 0.45);
+        border-block: 1px solid var(--line-soft);
+      }
+
+      .dimhead {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+        margin: 0 0 2rem;
+        font-family: var(--display);
+        font-size: clamp(1.35rem, 3vw, 1.85rem);
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+      .dimhead .tick {
+        width: 1px;
+        height: 2.1em;
+        background: var(--construct);
+        flex: 0 0 auto;
+      }
+      .dimhead .rule {
+        flex: 1 1 auto;
+        height: 1px;
+        background: var(--construct);
+        opacity: 0.5;
+        position: relative;
+        min-width: 2rem;
+      }
+      .dimhead .rule::before,
+      .dimhead .rule::after {
+        content: '';
+        position: absolute;
+        top: -3px;
+        border-top: 3.5px solid transparent;
+        border-bottom: 3.5px solid transparent;
+      }
+      .dimhead .rule::before {
+        left: 0;
+        border-right: 7px solid var(--construct);
+      }
+      .dimhead .rule::after {
+        right: 0;
+        border-left: 7px solid var(--construct);
+      }
+      .dimhead .value {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        font-weight: 400;
+        letter-spacing: 0.12em;
+        color: var(--construct);
+        text-transform: uppercase;
+        flex: 0 0 auto;
+      }
+
+      .lede {
+        font-size: 1.05rem;
+        color: var(--text-dim);
+        max-width: 68ch;
+        margin: 0 0 2rem;
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* Overview cards                                                   */
+      /* ---------------------------------------------------------------- */
+
+      .stack {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1px;
+        background: var(--line-soft);
+        border: 1px solid var(--line-soft);
+      }
+      .stack > div {
+        background: var(--panel);
+        padding: 1.5rem;
+      }
+      .stack h3 {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 0.7rem;
+        font-weight: 500;
+      }
+      .stack p {
+        margin: 0;
+        font-size: 0.94rem;
+        color: var(--text-dim);
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* Tables — parts list, format matrix                               */
+      /* ---------------------------------------------------------------- */
+
+      .sheet {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+      }
+      thead th {
+        font-family: var(--mono);
+        font-size: 0.67rem;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        font-weight: 500;
+        text-align: left;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel-lift);
+        white-space: nowrap;
+      }
+      tbody td {
+        padding: 0.85rem 1rem;
+        border-bottom: 1px solid var(--line-soft);
+        vertical-align: top;
+        color: var(--text-dim);
+      }
+      tbody tr:last-child td {
+        border-bottom: 0;
+      }
+      tbody tr:hover td {
+        background: rgba(255, 145, 66, 0.035);
+      }
+
+      .col-item {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--text-faint);
+        width: 3.5rem;
+        white-space: nowrap;
+      }
+      .col-area {
+        font-family: var(--display);
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text);
+        font-size: 0.86rem;
+        width: 15rem;
+      }
+      .col-mark {
+        text-align: center;
+        width: 5.5rem;
+      }
+      .col-fmt {
+        font-family: var(--mono);
+        font-size: 0.84rem;
+        color: var(--text);
+        white-space: nowrap;
+      }
+
+      .mark {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        border: 1px solid var(--accent);
+        transform: rotate(45deg);
+      }
+      .mark.on {
+        background: var(--accent);
+      }
+      .mark.off {
+        border-color: var(--line);
+      }
+
+      .legend {
+        display: flex;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        margin-top: 1rem;
+      }
+      .legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.55rem;
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* Getting started                                                  */
+      /* ---------------------------------------------------------------- */
+
+      .steps {
+        display: grid;
+        gap: 1px;
+        background: var(--line-soft);
+        border: 1px solid var(--line-soft);
+        counter-reset: step;
+      }
+      .step {
+        background: var(--panel);
+        padding: 1.5rem;
+        display: grid;
+        grid-template-columns: 3rem minmax(0, 1fr);
+        gap: 1.25rem;
+        align-items: start;
+      }
+      .step::before {
+        counter-increment: step;
+        content: counter(step, decimal-leading-zero);
+        font-family: var(--mono);
+        font-size: 0.95rem;
+        color: var(--accent-dim);
+        padding-top: 0.15rem;
+      }
+      .step h3 {
+        margin: 0 0 0.4rem;
+        font-family: var(--display);
+        font-size: 1.02rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+      .step p {
+        margin: 0 0 0.9rem;
+        color: var(--text-dim);
+        font-size: 0.94rem;
+      }
+      .step p:last-child {
+        margin-bottom: 0;
+      }
+
+      pre {
+        margin: 0;
+        padding: 0.9rem 1.1rem;
+        background: var(--ground);
+        border: 1px solid var(--line);
+        border-left: 2px solid var(--accent-dim);
+        overflow-x: auto;
+        font-family: var(--mono);
+        font-size: 0.83rem;
+        line-height: 1.75;
+        color: var(--text);
+      }
+      pre .cmt {
+        color: var(--text-faint);
+      }
+      pre .pr {
+        color: var(--accent-dim);
+        user-select: none;
+      }
+
+      .req {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--text-faint);
+        margin-top: 1rem;
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* Shortcuts                                                        */
+      /* ---------------------------------------------------------------- */
+
+      .keys {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1px;
+        background: var(--line-soft);
+        border: 1px solid var(--line-soft);
+      }
+      .keygroup {
+        background: var(--panel);
+        padding: 1.4rem 1.5rem;
+      }
+      .keygroup h3 {
+        margin: 0;
+        font-family: var(--display);
+        font-size: 0.95rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .keygroup .scope {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        color: var(--text-faint);
+        letter-spacing: 0.05em;
+        margin: 0.25rem 0 1.1rem;
+      }
+      .keygroup dl {
+        margin: 0;
+        display: grid;
+        gap: 0.5rem;
+      }
+      .keyrow {
+        display: flex;
+        align-items: baseline;
+        gap: 0.75rem;
+      }
+      .keyrow dt {
+        flex: 0 0 auto;
+        display: flex;
+        gap: 3px;
+        align-items: center;
+      }
+      .keyrow dd {
+        margin: 0;
+        flex: 1 1 auto;
+        font-size: 0.88rem;
+        color: var(--text-dim);
+        text-align: right;
+      }
+      kbd {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        line-height: 1;
+        padding: 0.34rem 0.45rem;
+        min-width: 1.7rem;
+        text-align: center;
+        display: inline-block;
+        background: var(--panel-lift);
+        border: 1px solid var(--line);
+        border-bottom-width: 2px;
+        color: var(--text);
+      }
+      kbd.wide {
+        letter-spacing: 0.03em;
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* Architecture                                                     */
+      /* ---------------------------------------------------------------- */
+
+      .arch {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+        gap: 1.5rem;
+        align-items: start;
+      }
+
+      .tree {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        padding: 1.25rem 1.4rem;
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        line-height: 1.85;
+        overflow-x: auto;
+        white-space: pre;
+        color: var(--text-dim);
+        margin: 0;
+      }
+      .tree b {
+        color: var(--text);
+        font-weight: 400;
+      }
+      .tree i {
+        color: var(--text-faint);
+        font-style: normal;
+      }
+
+      .notes {
+        display: grid;
+        gap: 1px;
+        background: var(--line-soft);
+        border: 1px solid var(--line-soft);
+      }
+      .note {
+        background: var(--panel);
+        padding: 1.25rem 1.4rem;
+      }
+      .note h3 {
+        margin: 0 0 0.5rem;
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--accent);
+        font-weight: 500;
+      }
+      .note p {
+        margin: 0;
+        font-size: 0.9rem;
+        color: var(--text-dim);
+      }
+      .note ul {
+        margin: 0.5rem 0 0;
+        padding-left: 1.1rem;
+        font-size: 0.9rem;
+        color: var(--text-dim);
+      }
+      .note li {
+        margin-bottom: 0.3rem;
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* Title block footer                                               */
+      /* ---------------------------------------------------------------- */
+
+      .titleblock {
+        border-top: 1px solid var(--line);
+        background: var(--panel);
+      }
+      .titleblock-in {
+        max-width: var(--measure);
+        margin: 0 auto;
+        padding-inline: var(--gutter);
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+      }
+      .tb {
+        padding: 1.4rem 1.25rem;
+        border-left: 1px solid var(--line-soft);
+      }
+      .tb:first-child {
+        border-left: 0;
+        padding-left: 0;
+      }
+      .tb h4 {
+        margin: 0 0 0.35rem;
+        font-family: var(--mono);
+        font-size: 0.64rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+        font-weight: 500;
+      }
+      .tb p {
+        margin: 0;
+        font-size: 0.88rem;
+        color: var(--text-dim);
+      }
+      .tb a {
+        font-size: 0.88rem;
+      }
+
+      /* ---------------------------------------------------------------- */
+      /* Responsive                                                       */
+      /* ---------------------------------------------------------------- */
+
+      @media (max-width: 900px) {
+        .hero {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 2.5rem;
+        }
+        .arch {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .specs-in,
+        .titleblock-in {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .spec:nth-child(3),
+        .tb:nth-child(3) {
+          border-left: 0;
+          padding-left: 0;
+        }
+        .spec:nth-child(3),
+        .spec:nth-child(4),
+        .tb:nth-child(3),
+        .tb:nth-child(4) {
+          border-top: 1px solid var(--line-soft);
+        }
+      }
+
+      @media (max-width: 640px) {
+        .topnav {
+          gap: 1rem;
+          width: 100%;
+          margin-left: 0;
+        }
+        .col-area {
+          width: auto;
+        }
+        .step {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 0.5rem;
+        }
+        .keyrow {
+          flex-wrap: wrap;
+        }
+        .keyrow dd {
+          text-align: left;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        .draw,
+        .fade,
+        .rise {
+          animation: none;
+          opacity: 1;
+          stroke-dashoffset: 0;
+          transform: none;
+        }
+        * {
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <a class="skip" href="#overview">Skip to content</a>
+
+    <header class="topbar">
+      <div class="topbar-in">
+        <a class="brand" href="#top">Tectonic</a>
+        <nav class="topnav" aria-label="Sections">
+          <a href="#overview">Overview</a>
+          <a href="#features">Features</a>
+          <a href="#start">Getting started</a>
+          <a href="#shortcuts">Shortcuts</a>
+          <a href="#io">Import / Export</a>
+          <a href="#architecture">Architecture</a>
+          <a href="https://github.com/radaiko/Tectonic">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- ============================================================ -->
+      <!-- Hero                                                          -->
+      <!-- ============================================================ -->
+      <section class="wrap hero">
+        <div>
+          <p class="eyebrow">Parametric CAD · runs in the browser</p>
+          <h1>Sketch it.<br />Constrain it.<br /><em>Extrude it.</em></h1>
+          <p>
+            Tectonic is a 2D/3D parametric CAD system with a Rust geometric kernel compiled
+            to WebAssembly. Every solid stays tied to the sketch and the dimensions that
+            made it, so changing a number rebuilds the part.
+          </p>
+          <div class="cta-row">
+            <a class="btn is-primary" href="#start">Get started</a>
+            <a class="btn" href="https://github.com/radaiko/Tectonic">View source</a>
+          </div>
+        </div>
+
+        <div class="hero-figure">
+          <svg
+            viewBox="0 0 660 400"
+            role="img"
+            aria-label="A dimensioned 2D sketch profile on the left is extruded into a 3D solid with a through hole on the right."
+          >
+            <!-- ---- Sketch profile ---- -->
+            <g>
+              <path
+                class="g-profile draw d1"
+                d="M60 140 H260 V290 H60 Z"
+                pathLength="1400"
+              />
+              <circle
+                class="g-profile draw d1"
+                cx="160"
+                cy="215"
+                r="32"
+                pathLength="1400"
+              />
+
+              <!-- perpendicular constraint glyphs at two corners -->
+              <g class="g-glyph fade d2">
+                <path d="M70 152 v10 h10" />
+                <path d="M250 278 v-10 h-10" />
+              </g>
+
+              <!-- horizontal dimension -->
+              <g class="g-dim fade d2">
+                <path d="M60 296 v34 M260 296 v34" />
+                <path d="M60 322 H260" />
+                <path d="M60 322 l9 -4 v8 Z" fill="var(--construct)" stroke="none" />
+                <path d="M260 322 l-9 -4 v8 Z" fill="var(--construct)" stroke="none" />
+              </g>
+              <text class="g-text fade d2" x="160" y="316" text-anchor="middle">
+                200.00
+              </text>
+
+              <!-- vertical dimension -->
+              <g class="g-dim fade d2">
+                <path d="M54 140 H26 M54 290 H26" />
+                <path d="M34 140 V290" />
+                <path d="M34 140 l-4 9 h8 Z" fill="var(--construct)" stroke="none" />
+                <path d="M34 290 l-4 -9 h8 Z" fill="var(--construct)" stroke="none" />
+              </g>
+              <text
+                class="g-text fade d2"
+                x="28"
+                y="215"
+                text-anchor="middle"
+                transform="rotate(-90 28 215)"
+              >
+                150.00
+              </text>
+
+              <!-- diameter callout -->
+              <g class="g-dim fade d2">
+                <path d="M183 192 L214 168 H244" />
+              </g>
+              <text class="g-text fade d2" x="216" y="162">⌀64.00</text>
+            </g>
+
+            <!-- ---- Feature arrow ---- -->
+            <g class="fade d3">
+              <path
+                class="g-dim"
+                d="M290 215 H382"
+                stroke="var(--accent)"
+                stroke-dasharray="6 4"
+              />
+              <path d="M386 215 l-11 -5 v10 Z" fill="var(--accent)" />
+              <text class="g-note" x="290" y="200">EXTRUDE 40</text>
+            </g>
+
+            <!-- ---- Resulting solid ---- -->
+            <g class="rise d4">
+              <!-- shaded faces -->
+              <path class="g-face" d="M577.9 294.5 L519.4 328.25 L519.4 368.75 L577.9 335 Z" />
+              <path class="g-face" d="M441.5 283.25 L519.4 328.25 L519.4 368.75 L441.5 323.75 Z" />
+              <path
+                class="g-face-top"
+                d="M500 249.5 L577.9 294.5 L519.4 328.25 L441.5 283.25 Z"
+              />
+
+              <!-- hidden geometry -->
+              <g class="g-hidden">
+                <path d="M500 249.5 V290" />
+                <path d="M500 290 L577.9 335" />
+                <path d="M500 290 L441.5 323.75" />
+                <ellipse cx="509.7" cy="329.4" rx="22" ry="12.7" />
+              </g>
+
+              <!-- visible edges -->
+              <g class="g-object">
+                <path d="M500 249.5 L577.9 294.5 L519.4 328.25 L441.5 283.25 Z" />
+                <path d="M577.9 294.5 V335" />
+                <path d="M519.4 328.25 V368.75" />
+                <path d="M441.5 283.25 V323.75" />
+                <path d="M577.9 335 L519.4 368.75 L441.5 323.75" />
+                <ellipse cx="509.7" cy="288.9" rx="22" ry="12.7" />
+              </g>
+
+              <text class="g-note" x="441" y="392">SOLID · 1 BODY · 6 FACES</text>
+            </g>
+          </svg>
+        </div>
+      </section>
+
+      <div class="wrap">
+        <h2>Screenshots</h2>
+        <div class="screenshots">
+          <figure>
+            <img src="screenshots/start-screen.png" alt="Tectonic start screen" />
+            <figcaption>Start screen — New Document or Open File</figcaption>
+          </figure>
+          <figure>
+            <img src="screenshots/sketch-editor.png" alt="Sketch editor with grid and tools" />
+            <figcaption>Sketch editor — 2D drawing with constraint solver</figcaption>
+          </figure>
+          <figure>
+            <img src="screenshots/3d-viewport.png" alt="3D viewport showing a model" />
+            <figcaption>3D viewport — WebGPU/WebGL rendering</figcaption>
+          </figure>
+          <figure>
+            <img src="screenshots/help-overlay.png" alt="Help overlay with keyboard shortcuts" />
+            <figcaption>Help overlay — press ? or F1 to toggle</figcaption>
+          </figure>
+        </div>
+      </div>
+
+      <!-- ============================================================ -->
+      <!-- Spec strip                                                    -->
+      <!-- ============================================================ -->
+      <div class="specs">
+        <div class="specs-in">
+          <div class="spec">
+            <b>24</b>
+            <span>Capability areas</span>
+          </div>
+          <div class="spec">
+            <b>14k+</b>
+            <span>Lines of Rust kernel</span>
+          </div>
+          <div class="spec">
+            <b>2,269</b>
+            <span>Tests, TS + Rust</span>
+          </div>
+          <div class="spec">
+            <b>0</b>
+            <span>Accounts required</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================ -->
+      <!-- Overview                                                      -->
+      <!-- ============================================================ -->
+      <section class="wrap band" id="overview">
+        <h2 class="dimhead">
+          <span class="tick"></span>
+          <span>Overview</span>
+          <span class="rule"></span>
+          <span class="value">What it is</span>
+        </h2>
+
+        <p class="lede">
+          Tectonic is a browser-based parametric CAD system aimed at what Onshape and
+          Fusion 360 do for mechanical design: sketch a profile, constrain it, drive solids
+          from it, and keep the whole history editable. Scope is CAD only — no CAM, no
+          simulation, no generative design.
+        </p>
+
+        <div class="stack">
+          <div>
+            <h3>Nothing is stored</h3>
+            <p>
+              There is no database and no cloud. Open a <code>.tectonic</code> file or
+              start a new document; everything lives in memory until you export. Closing
+              the tab discards unsaved work.
+            </p>
+          </div>
+          <div>
+            <h3>Single user</h3>
+            <p>
+              No accounts, no sign-in, no collaboration layer. The application is the
+              modeling environment and nothing else.
+            </p>
+          </div>
+          <div>
+            <h3>Real B-Rep, not meshes</h3>
+            <p>
+              Geometry runs through a Rust boundary-representation kernel compiled to WASM,
+              with a TypeScript fallback kernel if WASM fails to load.
+            </p>
+          </div>
+          <div>
+            <h3>Parametric all the way down</h3>
+            <p>
+              An ordered feature tree with a roll bar, dependency graph, suppression and
+              reorder. Dimensions accept equations and global parameters.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Features                                                      -->
+      <!-- ============================================================ -->
+      <section class="wrap band band-alt" id="features">
+        <h2 class="dimhead">
+          <span class="tick"></span>
+          <span>Features</span>
+          <span class="rule"></span>
+          <span class="value">24 areas</span>
+        </h2>
+
+        <p class="lede">
+          The full list, as a parts schedule. The same content in plain text lives in
+          <a href="https://github.com/radaiko/Tectonic/blob/main/docs/features.md"
+            >features.md</a
+          >.
+        </p>
+
+        <div class="sheet">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Item</th>
+                <th scope="col">Area</th>
+                <th scope="col">Capabilities</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="col-item">01</td>
+                <td class="col-area">2D Sketching</td>
+                <td>
+                  14 entity types, 19 geometric constraints, dimensional constraints with
+                  equations, snap system, Canvas 2D renderer
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">02</td>
+                <td class="col-area">3D Part Modeling</td>
+                <td>
+                  Feature tree with roll bar, reorder and suppress. Extrude, revolve,
+                  sweep, loft, fillet, chamfer, shell, hole, draft, rib, pattern, mirror,
+                  scale, combine, split, direct editing
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">03</td>
+                <td class="col-area">Sheet Metal</td>
+                <td>
+                  Base flange, edge flange, miter flange, hem, jog, unfold and refold, flat
+                  pattern with DXF export, bend allowance, K-factor, corner relief
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">04</td>
+                <td class="col-area">Assemblies</td>
+                <td>
+                  Hierarchical assembly tree, 16 mate and joint types (revolute, slider,
+                  cylindrical, planar, ball, screw, gear, belt, rack-and-pinion), mate
+                  solver, BOM, exploded views, interference detection
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">05</td>
+                <td class="col-area">Surface Modeling</td>
+                <td>
+                  Extrude, revolve, sweep and loft of open profiles, boundary surface,
+                  patch, offset, ruled, extend, trim, untrim, knit, split, thicken, stitch
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">06</td>
+                <td class="col-area">2D Drawings</td>
+                <td>
+                  Auto-generated orthographic views, section, detail and auxiliary views,
+                  dimensions, GD&amp;T, title blocks, revision tables, hole tables,
+                  auto-balloon
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">07</td>
+                <td class="col-area">Weldments</td>
+                <td>
+                  Structural members from sketch paths and standard profiles (I-beam,
+                  C-channel, angle, T-beam, tube, pipe, flat bar), miter, butt and cope
+                  joints, end treatments
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">08</td>
+                <td class="col-area">Content Library</td>
+                <td>
+                  Parametric fasteners (bolts, nuts, washers, screws, bearings, pins, keys)
+                  per DIN/ISO/ANSI, structural steel profiles per DIN EN and AISC
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">09</td>
+                <td class="col-area">Feature Recognition</td>
+                <td>
+                  Auto-detect extrude, revolve, hole, fillet, chamfer, pattern and mirror
+                  from imported STEP geometry
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">10</td>
+                <td class="col-area">Derived Components</td>
+                <td>
+                  Derived parts referencing another part with modifications, linked
+                  components across external <code>.tectonic</code> files, top-down design
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">11</td>
+                <td class="col-area">Design Automation</td>
+                <td>
+                  Global parameter table with expressions (sin, cos, sqrt, pow and more),
+                  if-then rules engine, JSON-based design scripts
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">12</td>
+                <td class="col-area">Motion &amp; Animation</td>
+                <td>
+                  Joint animation with keyframes and a timeline, motion studies with
+                  collision detection, GIF and MP4 export
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">13</td>
+                <td class="col-area">Mesh Editing</td>
+                <td>
+                  Import STL and OBJ, validate, repair (fill holes, stitch, remove
+                  duplicates), edit (extrude face, bevel, bridge, fill hole), simplify,
+                  convert to B-Rep solid
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">14</td>
+                <td class="col-area">Form / Sculpt</td>
+                <td>
+                  Catmull-Clark subdivision surfaces, crease, symmetry, primitive cages,
+                  convert to solid
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">15</td>
+                <td class="col-area">Part Studios</td>
+                <td>
+                  Multiple parts sharing sketches in one tab, per-part feature trees,
+                  reference visualization
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">16</td>
+                <td class="col-area">PMI Annotations</td>
+                <td>
+                  Model-based definition with dimensions, GD&amp;T, datums, surface finish,
+                  notes, leaders and annotation views per ASME Y14.41 and ISO 16792
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">17</td>
+                <td class="col-area">Materials</td>
+                <td>
+                  100+ engineering materials with density, modulus, strength and thermal
+                  properties, PBR appearances (color, metallic, roughness, opacity,
+                  texture), appearance presets
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">18</td>
+                <td class="col-area">Configurations</td>
+                <td>
+                  Table-driven variants with parameter overrides, suppression state,
+                  component instances, derived configurations
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">19</td>
+                <td class="col-area">Multi-Viewport</td>
+                <td>
+                  Up to 4 viewports (single, 2H, 2V, 4-quad) with independent projection,
+                  view and style, view cube, 6 visual styles from shaded to technical
+                  illustration
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">20</td>
+                <td class="col-area">Section Views</td>
+                <td>Dynamic clipping plane, half-section and quarter-section views</td>
+              </tr>
+              <tr>
+                <td class="col-item">21</td>
+                <td class="col-area">Measure &amp; Analysis</td>
+                <td>
+                  Distance, angle, length, area, volume, mass properties, minimum distance,
+                  curvature combs, zebra stripes, draft heat map, wall thickness map,
+                  minimum radius
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">22</td>
+                <td class="col-area">Visual Diff</td>
+                <td>
+                  Geometry comparison with color-coded changes, side-by-side overlay,
+                  change summary
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">23</td>
+                <td class="col-area">Rendering</td>
+                <td>
+                  WebGPU with automatic WebGL fallback, on-demand render loop that idles at
+                  zero GPU usage, developer overlay with renderer, FPS, triangle and draw
+                  call counts
+                </td>
+              </tr>
+              <tr>
+                <td class="col-item">24</td>
+                <td class="col-area">Large Assemblies</td>
+                <td>
+                  Performance layer for large assemblies: level of detail, culling and
+                  instance handling
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Getting started                                               -->
+      <!-- ============================================================ -->
+      <section class="wrap band" id="start">
+        <h2 class="dimhead">
+          <span class="tick"></span>
+          <span>Getting started</span>
+          <span class="rule"></span>
+          <span class="value">4 steps</span>
+        </h2>
+
+        <p class="lede">
+          Tectonic runs from source. Full build details, including the Rust kernel, are in
+          <a href="https://github.com/radaiko/Tectonic/blob/main/docs/build.md">build.md</a
+          >.
+        </p>
+
+        <div class="steps">
+          <div class="step">
+            <div>
+              <h3>Clone and install</h3>
+              <p>Node.js 20 or newer. Everything else comes from npm.</p>
+              <pre><span class="pr">$</span> git clone https://github.com/radaiko/Tectonic.git
+<span class="pr">$</span> cd Tectonic
+<span class="pr">$</span> npm install</pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div>
+              <h3>Start the dev server</h3>
+              <p>
+                Vite serves the app at <code>http://localhost:5173</code> with hot reload.
+              </p>
+              <pre><span class="pr">$</span> npm run dev</pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div>
+              <h3>Model something</h3>
+              <p>
+                Pick <b>New</b> on the start screen, draw a closed profile on a plane, add
+                constraints and dimensions until the sketch is fully defined, then press
+                <kbd>E</kbd> to extrude it. Open the command palette with
+                <kbd>Ctrl</kbd><kbd>P</kbd> to reach any tool by name, or press
+                <kbd>F1</kbd> for the in-app shortcut reference.
+              </p>
+            </div>
+          </div>
+
+          <div class="step">
+            <div>
+              <h3>Save your work</h3>
+              <p>
+                Nothing persists on its own. Export to <code>.tectonic</code> to keep the
+                full parametric history, or to STEP, STL, DXF and the other formats below
+                for downstream use.
+              </p>
+              <pre><span class="pr">$</span> npm run build   <span class="cmt"># production bundle in dist/</span>
+<span class="pr">$</span> npm test        <span class="cmt"># run the test suite</span></pre>
+            </div>
+          </div>
+        </div>
+
+        <p class="req">
+          Browser support: latest two major versions of Chrome, Edge, Firefox and Safari.
+        </p>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Shortcuts                                                     -->
+      <!-- ============================================================ -->
+      <section class="wrap band band-alt" id="shortcuts">
+        <h2 class="dimhead">
+          <span class="tick"></span>
+          <span>Keyboard shortcuts</span>
+          <span class="rule"></span>
+          <span class="value">F1 in app</span>
+        </h2>
+
+        <p class="lede">
+          The same reference the in-app overlay shows. Press <kbd>F1</kbd> or
+          <kbd>?</kbd> at any time to bring it up without leaving the model.
+        </p>
+
+        <div class="keys">
+          <div class="keygroup">
+            <h3>General</h3>
+            <p class="scope">Anywhere in the application</p>
+            <dl>
+              <div class="keyrow"><dt><kbd>?</kbd></dt><dd>Toggle help</dd></div>
+              <div class="keyrow"><dt><kbd class="wide">F1</kbd></dt><dd>Toggle help</dd></div>
+              <div class="keyrow">
+                <dt><kbd class="wide">Ctrl</kbd><kbd>P</kbd></dt>
+                <dd>Command palette</dd>
+              </div>
+              <div class="keyrow">
+                <dt><kbd class="wide">Ctrl</kbd><kbd>N</kbd></dt>
+                <dd>New document</dd>
+              </div>
+              <div class="keyrow">
+                <dt><kbd class="wide">Ctrl</kbd><kbd>O</kbd></dt>
+                <dd>Open file</dd>
+              </div>
+              <div class="keyrow">
+                <dt><kbd class="wide">Ctrl</kbd><kbd>S</kbd></dt>
+                <dd>Save / export</dd>
+              </div>
+              <div class="keyrow">
+                <dt><kbd class="wide">Ctrl</kbd><kbd>Z</kbd></dt>
+                <dd>Undo</dd>
+              </div>
+              <div class="keyrow">
+                <dt><kbd class="wide">Ctrl</kbd><kbd class="wide">Shift</kbd><kbd>Z</kbd></dt>
+                <dd>Redo</dd>
+              </div>
+              <div class="keyrow">
+                <dt><kbd class="wide">Esc</kbd></dt>
+                <dd>Cancel the current tool</dd>
+              </div>
+              <div class="keyrow">
+                <dt><kbd class="wide">Del</kbd></dt>
+                <dd>Delete the selection</dd>
+              </div>
+              <div class="keyrow">
+                <dt><kbd class="wide">Ctrl</kbd><kbd class="wide">Shift</kbd><kbd>D</kbd></dt>
+                <dd>Toggle developer overlay</dd>
+              </div>
+              <div class="keyrow">
+                <dt><kbd class="wide">Ctrl</kbd><kbd class="wide">Shift</kbd><kbd>F</kbd></dt>
+                <dd>Toggle FPS lock</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="keygroup">
+            <h3>Sketch tools</h3>
+            <p class="scope">While the sketch surface is active</p>
+            <dl>
+              <div class="keyrow"><dt><kbd>V</kbd></dt><dd>Select tool</dd></div>
+              <div class="keyrow"><dt><kbd>L</kbd></dt><dd>Line tool</dd></div>
+              <div class="keyrow"><dt><kbd>C</kbd></dt><dd>Circle tool</dd></div>
+              <div class="keyrow"><dt><kbd>A</kbd></dt><dd>Arc tool</dd></div>
+              <div class="keyrow"><dt><kbd>R</kbd></dt><dd>Rectangle tool</dd></div>
+              <div class="keyrow"><dt><kbd>D</kbd></dt><dd>Dimension tool</dd></div>
+              <div class="keyrow"><dt><kbd>T</kbd></dt><dd>Trim tool</dd></div>
+              <div class="keyrow"><dt><kbd>F</kbd></dt><dd>Fillet tool</dd></div>
+              <div class="keyrow"><dt><kbd>M</kbd></dt><dd>Mirror tool</dd></div>
+              <div class="keyrow"><dt><kbd>P</kbd></dt><dd>Pattern tool</dd></div>
+            </dl>
+          </div>
+
+          <div class="keygroup">
+            <h3>3D view</h3>
+            <p class="scope">While the 3D surface is active</p>
+            <dl>
+              <div class="keyrow">
+                <dt><kbd class="wide">Left drag</kbd></dt>
+                <dd>Orbit</dd>
+              </div>
+              <div class="keyrow">
+                <dt><kbd class="wide">Middle drag</kbd></dt>
+                <dd>Pan</dd>
+              </div>
+              <div class="keyrow"><dt><kbd class="wide">Scroll</kbd></dt><dd>Zoom</dd></div>
+              <div class="keyrow"><dt><kbd>F</kbd></dt><dd>Fit to screen</dd></div>
+            </dl>
+          </div>
+
+          <div class="keygroup">
+            <h3>Profile / Sheet metal</h3>
+            <p class="scope">Turns the active sketch into solid geometry</p>
+            <dl>
+              <div class="keyrow"><dt><kbd>E</kbd></dt><dd>Extrude</dd></div>
+              <div class="keyrow"><dt><kbd>S</kbd></dt><dd>Shell</dd></div>
+              <div class="keyrow"><dt><kbd>B</kbd></dt><dd>Base flange</dd></div>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Import / Export                                               -->
+      <!-- ============================================================ -->
+      <section class="wrap band" id="io">
+        <h2 class="dimhead">
+          <span class="tick"></span>
+          <span>Import / Export</span>
+          <span class="rule"></span>
+          <span class="value">21 formats</span>
+        </h2>
+
+        <p class="lede">
+          <code>.tectonic</code> is the only format that round-trips the full parametric
+          history — it is self-contained JSON, so it diffs and stores like source. Every
+          other format loses history by design.
+        </p>
+
+        <div class="sheet">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Format</th>
+                <th scope="col" class="col-mark">In</th>
+                <th scope="col" class="col-mark">Out</th>
+                <th scope="col">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="col-fmt">.tectonic</td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>Native JSON, full parametric history</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">STEP</td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>AP203 / AP214, B-Rep both ways</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">STL</td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>ASCII and binary in, configurable resolution out</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">DXF</td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>R12 / 2000 in, 2D views and sketches out</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">SVG</td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>Path data in, sketch export out</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">OBJ + MTL</td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>Mesh with material</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">glTF / GLB</td>
+                <td class="col-mark"><span class="mark off"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>JSON with embedded buffers</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">3MF</td>
+                <td class="col-mark"><span class="mark off"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>ZIP + XML model</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">PDF (2D)</td>
+                <td class="col-mark"><span class="mark off"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>Dimensioned orthographic drawing</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">PDF (3D)</td>
+                <td class="col-mark"><span class="mark off"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>Interactive 3D via PRC / U3D</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">HTML</td>
+                <td class="col-mark"><span class="mark off"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>Standalone single-file 3D viewer</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">PNG / JPEG</td>
+                <td class="col-mark"><span class="mark off"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>Viewport screenshot</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">GIF / MP4</td>
+                <td class="col-mark"><span class="mark off"></span></td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td>Motion study animation</td>
+              </tr>
+              <tr>
+                <td class="col-fmt">SolidWorks, CATIA, NX,<br />Creo, Inventor,<br />Parasolid, JT</td>
+                <td class="col-mark"><span class="mark on"></span></td>
+                <td class="col-mark"><span class="mark off"></span></td>
+                <td>Format detection with mesh extraction</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="legend">
+          <span><span class="mark on"></span> Supported</span>
+          <span><span class="mark off"></span> Not supported</span>
+        </p>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- Architecture                                                  -->
+      <!-- ============================================================ -->
+      <section class="wrap band band-alt" id="architecture">
+        <h2 class="dimhead">
+          <span class="tick"></span>
+          <span>Architecture</span>
+          <span class="rule"></span>
+          <span class="value">30 modules</span>
+        </h2>
+
+        <p class="lede">
+          Domain models are renderer-agnostic — no React and no three.js below
+          <code>src/domain/</code>. Geometry always goes through the
+          <code>IKernel</code> interface, so the backend swaps without touching callers.
+        </p>
+
+        <div class="arch">
+          <pre class="tree"><b>src/</b>
+├── <b>app/</b>          <i>App shell, start screen, routing</i>
+├── <b>ui/</b>           <i>React components, panels, ribbon</i>
+├── <b>domain/</b>       <i>Pure domain models</i>
+├── <b>kernel/</b>       <i>IKernel + RustKernel + StubKernel</i>
+├── <b>sketch/</b>       <i>Entities, constraints, solver</i>
+├── <b>features/</b>     <i>Feature engine</i>
+├── <b>sheetmetal/</b>   <i>Sheet metal environment</i>
+├── <b>assembly/</b>     <i>Assembly modeling with mates</i>
+├── <b>drawing/</b>      <i>2D drawing workspace</i>
+├── <b>surface/</b>      <i>Surface modeling</i>
+├── <b>weldments/</b>    <i>Structural frames</i>
+├── <b>library/</b>      <i>Standard content library</i>
+├── <b>recognition/</b>  <i>Feature recognition</i>
+├── <b>automation/</b>   <i>Design automation</i>
+├── <b>motion/</b>       <i>Motion and animation</i>
+├── <b>mesh/</b>         <i>Mesh editing</i>
+├── <b>form/</b>         <i>Sculpt and subdivision</i>
+├── <b>studio/</b>       <i>Part Studios</i>
+├── <b>pmi/</b>          <i>3D annotations</i>
+├── <b>material/</b>     <i>Materials library</i>
+├── <b>config/</b>       <i>Configurations and variants</i>
+├── <b>analysis/</b>     <i>Measure and analysis</i>
+├── <b>diff/</b>         <i>Visual diff and compare</i>
+├── <b>performance/</b>  <i>Large assembly performance</i>
+├── <b>io/</b>           <i>I/O pipelines, all formats</i>
+├── <b>3d/</b>           <i>three.js viewport</i>
+├── <b>view/</b>         <i>Viewports, view cube, styles</i>
+└── <b>solver/</b>       <i>Constraint solver</i>
+
+<b>kernel/</b>
+├── <b>tectonic-kernel/</b>  <i>Rust core, 447 tests</i>
+└── <b>tectonic-wasm/</b>    <i>wasm-bindgen bindings</i></pre>
+
+          <div class="notes">
+            <div class="note">
+              <h3>Geometric kernel</h3>
+              <p>
+                Written in Rust, compiled to WASM with wasm-pack. 14,000+ lines across 30+
+                modules, 447 unit tests.
+              </p>
+              <ul>
+                <li>Math: Vec2, Vec3, Mat4, Quat, Plane</li>
+                <li>B-Rep: Vertex, Edge, Face, Body, HalfEdge, Shell, Surface, BoundingBox</li>
+                <li>
+                  Operations: extrude, revolve, sweep, loft, boolean, fillet, chamfer, shell
+                </li>
+                <li>Mesh: ear-clipping and Delaunay triangulation, tessellation, simplify</li>
+                <li>
+                  14 operations exported through wasm-bindgen with JSON I/O, falling back
+                  to the TypeScript StubKernel if WASM fails to load
+                </li>
+              </ul>
+            </div>
+
+            <div class="note">
+              <h3>Stack</h3>
+              <ul>
+                <li>TypeScript in strict mode, plus Rust for the kernel</li>
+                <li>React for UI, Canvas 2D for sketching</li>
+                <li>three.js for 3D, WebGPU with WebGL fallback</li>
+                <li>Vite for build, Vitest and cargo test for tests</li>
+                <li>Constraint solver is pure TypeScript, no WASM dependency</li>
+              </ul>
+            </div>
+
+            <div class="note">
+              <h3>Rendering</h3>
+              <p>
+                The render loop is on-demand: frames are drawn only when something changes,
+                so an idle viewport costs no GPU time. <kbd>Ctrl</kbd><kbd>Shift</kbd
+                ><kbd>D</kbd> opens the developer overlay with renderer backend, FPS,
+                triangle count and draw calls.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ============================================================== -->
+    <!-- Title block                                                     -->
+    <!-- ============================================================== -->
+    <footer class="titleblock">
+      <div class="titleblock-in">
+        <div class="tb">
+          <h4>Project</h4>
+          <p>Tectonic — browser-based parametric CAD</p>
+        </div>
+        <div class="tb">
+          <h4>Source</h4>
+          <p><a href="https://github.com/radaiko/Tectonic">github.com/radaiko/Tectonic</a></p>
+        </div>
+        <div class="tb">
+          <h4>Docs</h4>
+          <p>
+            <a href="https://github.com/radaiko/Tectonic/blob/main/docs/features.md"
+              >features.md</a
+            >
+            ·
+            <a href="https://github.com/radaiko/Tectonic/blob/main/docs/build.md">build.md</a>
+          </p>
+        </div>
+        <div class="tb">
+          <h4>License</h4>
+          <p>
+            <a href="https://github.com/radaiko/Tectonic/blob/main/LICENSE"
+              >Source-available</a
+            >
+          </p>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
