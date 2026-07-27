@@ -1,0 +1,147 @@
+.motion {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.motion__transport {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.motion__button {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.25rem 0.6rem;
+  font: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.motion__button:hover {
+  background: var(--surface-hover);
+}
+
+.motion__button[aria-pressed='true'] {
+  border-color: var(--accent, #4c8dff);
+  color: var(--accent, #4c8dff);
+}
+
+.motion__button--small {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.72rem;
+}
+
+.motion__speed,
+.motion__loop {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.motion__readout {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.motion__scrubber {
+  width: 100%;
+}
+
+.motion__tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.motion__track {
+  display: grid;
+  grid-template-columns: 10rem 1fr auto;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.motion__track-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.motion__lane {
+  position: relative;
+  height: 1.4rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface-sunken, rgba(0, 0, 0, 0.15));
+}
+
+.motion__key {
+  position: absolute;
+  top: 50%;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin: -0.3rem 0 0 -0.3rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--text-muted);
+  transform: rotate(45deg);
+  cursor: pointer;
+}
+
+.motion__key--active {
+  background: var(--accent, #4c8dff);
+  border-color: var(--accent, #4c8dff);
+}
+
+.motion__playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--accent, #4c8dff);
+  pointer-events: none;
+}
+
+.motion__inspector {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.motion__inspector label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.motion__inspector input,
+.motion__inspector select {
+  width: 7rem;
+}
+
+.motion__add,
+.motion__export {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.motion__empty {
+  margin: 0;
+  color: var(--text-muted);
+}

@@ -1,0 +1,147 @@
+.mesh-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.mesh-editor__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.mesh-editor__modes {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.mesh-editor__mode {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.55rem;
+  font: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-transform: capitalize;
+}
+
+.mesh-editor__mode--active {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  border-color: var(--accent, #4c8dff);
+}
+
+.mesh-editor__stats {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mesh-editor__health {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.2rem 0.8rem;
+  margin: 0;
+}
+
+.mesh-editor__health > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.mesh-editor__health dt {
+  color: var(--text-muted);
+}
+
+.mesh-editor__health dd {
+  margin: 0;
+  text-align: right;
+}
+
+.mesh-editor__ok {
+  color: var(--success, #4caf7d);
+}
+
+.mesh-editor__bad {
+  color: var(--danger, #e2564a);
+}
+
+.mesh-editor__group {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem 0.6rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.mesh-editor__group[disabled] {
+  opacity: 0.5;
+}
+
+.mesh-editor__group legend {
+  padding: 0 0.3rem;
+  color: var(--text-muted);
+}
+
+.mesh-editor__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.mesh-editor__axis {
+  display: inline-flex;
+  gap: 0.15rem;
+}
+
+.mesh-editor__amount {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.mesh-editor__amount input {
+  width: 5rem;
+}
+
+.mesh-editor button {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.55rem;
+  font: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.mesh-editor button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.mesh-editor button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mesh-editor__footer {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.mesh-editor__primary {
+  border-color: var(--accent, #4c8dff);
+  color: var(--accent, #4c8dff);
+}
+
+.mesh-editor__message {
+  color: var(--text-muted);
+}
