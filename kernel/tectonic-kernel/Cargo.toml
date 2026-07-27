@@ -1,0 +1,10 @@
+[package]
+name = "tectonic-kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Geometric modelling kernel for Tectonic — B-Rep topology, modelling operations and tessellation."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

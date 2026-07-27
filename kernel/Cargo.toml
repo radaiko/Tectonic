@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["tectonic-kernel", "tectonic-wasm"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/radaiko/Tectonic"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Small, fast WASM: the kernel is fetched over the wire, so size is a feature.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
