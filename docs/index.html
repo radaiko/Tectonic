@@ -274,6 +274,30 @@
         height: auto;
         display: block;
       }
+      .screenshots {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+        margin: 2rem 0;
+        justify-content: center;
+      }
+      .screenshots figure {
+        margin: 0;
+        flex: 1 1 400px;
+        max-width: 600px;
+      }
+      .screenshots img {
+        width: 100%;
+        border: 1px solid #2a2d35;
+        border-radius: 8px;
+      }
+      .screenshots figcaption {
+        text-align: center;
+        color: #8b8fa3;
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+      }
+
       /* SVG line vocabulary, straight from a drawing sheet. */
       .g-object {
         fill: none;
@@ -958,7 +982,8 @@
             made it, so changing a number rebuilds the part.
           </p>
           <div class="cta-row">
-            <a class="btn is-primary" href="https://github.com/radaiko/Tectonic">View source</a>
+            <a class="btn is-primary" href="#start">Get started</a>
+            <a class="btn" href="https://github.com/radaiko/Tectonic">View source</a>
           </div>
         </div>
 
@@ -1071,11 +1096,25 @@
       </section>
 
       <div class="wrap">
-        <p class="eyebrow" style="text-align:center;margin-top:2rem;">Live system</p>
-        <p style="text-align:center;font-size:1.25rem;">
-          A hosted version of Tectonic will be available at<br />
-          <a href="https://tectonic.spitzbub.app"><strong>tectonic.spitzbub.app</strong></a>
-        </p>
+        <h2>Screenshots</h2>
+        <div class="screenshots">
+          <figure>
+            <img src="screenshots/start-screen.png" alt="Tectonic start screen" />
+            <figcaption>Start screen — New Document or Open File</figcaption>
+          </figure>
+          <figure>
+            <img src="screenshots/sketch-editor.png" alt="Sketch editor with grid and tools" />
+            <figcaption>Sketch editor — 2D drawing with constraint solver</figcaption>
+          </figure>
+          <figure>
+            <img src="screenshots/3d-viewport.png" alt="3D viewport showing a model" />
+            <figcaption>3D viewport — WebGPU/WebGL rendering</figcaption>
+          </figure>
+          <figure>
+            <img src="screenshots/help-overlay.png" alt="Help overlay with keyboard shortcuts" />
+            <figcaption>Help overlay — press ? or F1 to toggle</figcaption>
+          </figure>
+        </div>
       </div>
 
       <!-- ============================================================ -->
