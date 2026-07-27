@@ -150,4 +150,4 @@ npm run build
 
 ## License
 
-MIT
+Source-available. See [LICENSE](LICENSE) for details. Third-party dependencies are governed by their respective licenses (MIT, Apache 2.0).
