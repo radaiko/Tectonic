@@ -99,6 +99,13 @@ const LOCKED_FRAME_MS = 1000 / 60
  * frame rate, so the budget is checked with just under a millisecond of slack.
  */
 const FRAME_SLACK_MS = 1
+/**
+ * A gap this long between two frames is the viewport sitting idle, not a slow
+ * frame — nothing is drawn unless something changed. Averaging across it would
+ * report the length of the pause rather than how fast the scene draws, so the
+ * sample window starts over instead.
+ */
+const IDLE_GAP_MS = 100
 
 const RENDERER_LABELS: Record<RendererKind, string> = { webgpu: 'WebGPU', webgl: 'WebGL' }
 
@@ -116,6 +123,13 @@ export function ThreeViewport({
   // alongside it is the same fact in a form the overlay can render.
   const rendererKindRef = useRef<RendererKind | null>(null)
   const [rendererKind, setRendererKind] = useState<RendererKind | null>(null)
+
+  // Frames are drawn on demand: something changed, so one frame is due. The
+  // flag is what a request sets and a drawn frame clears; `requestRender` is
+  // installed by the renderer effect and stays a no-op until the GPU device has
+  // been acquired, since there is nothing to draw with before then.
+  const needsRenderRef = useRef(false)
+  const requestRenderRef = useRef<() => void>(() => {})
 
   const [overlayVisible, setOverlayVisible] = useState(false)
   // Off by default, so the viewport keeps drawing as fast as the display allows
@@ -135,6 +149,10 @@ export function ThreeViewport({
     // Hiding the overlay drops the readings with it: showing it again a minute
     // later should not flash numbers from whatever the scene used to be.
     if (!overlayVisible) setStats(null)
+    // Both toggles change what the next frame does — the overlay needs one to
+    // open its sample window, the rate lock to take effect — and an idle
+    // viewport has no frame coming on its own.
+    requestRenderRef.current()
   }, [overlayVisible, rateLocked])
 
   useEffect(() => {
@@ -204,18 +222,6 @@ export function ThreeViewport({
       controls.enableDamping = true
       controls.dampingFactor = 0.08
 
-      const resize = (): void => {
-        const { clientWidth, clientHeight } = container
-        if (clientWidth === 0 || clientHeight === 0) return
-        renderer.setSize(clientWidth, clientHeight, false)
-        camera.aspect = clientWidth / clientHeight
-        camera.updateProjectionMatrix()
-      }
-      resize()
-
-      const observer = new ResizeObserver(resize)
-      observer.observe(container)
-
       /**
        * The two backends disagree about `info.render.calls`: WebGL clears it
        * every frame, while the WebGPU info keeps a running total there and
@@ -230,20 +236,20 @@ export function ThreeViewport({
         }
       }
 
+      // Handle of the frame already booked, or 0 when none is.
       let frame = 0
       // Frames drawn since the current FPS window opened, and when it opened.
       let windowFrames = 0
       let windowStart = 0
       let sampling = false
+      // When the last frame was actually drawn — the rate lock's reference
+      // point, and what tells a slow frame apart from an idle stretch.
       let lastDraw = 0
 
-      const animate = (now: number): void => {
-        frame = requestAnimationFrame(animate)
-
-        if (rateLockedRef.current) {
-          if (now - lastDraw < LOCKED_FRAME_MS - FRAME_SLACK_MS) return
-          lastDraw = now
-        }
+      /** Draws one frame and folds it into the overlay's FPS window. */
+      const draw = (now: number): void => {
+        const gap = now - lastDraw
+        lastDraw = now
 
         controls.update()
         // WebGL resets these counters inside render(), but the WebGPU info is
@@ -258,10 +264,11 @@ export function ThreeViewport({
           return
         }
 
-        // First frame after the overlay opens only starts the clock: measuring
-        // against a window left over from before would report the average across
-        // however long the overlay was hidden.
-        if (!sampling) {
+        // First frame after the overlay opens only starts the clock, as does the
+        // first frame after an idle stretch: measuring against a window left over
+        // from before would report the average across however long nothing was
+        // drawn, rather than the rate the scene draws at.
+        if (!sampling || gap > IDLE_GAP_MS) {
           sampling = true
           windowFrames = 0
           windowStart = now
@@ -276,11 +283,64 @@ export function ThreeViewport({
         windowFrames = 0
         windowStart = now
       }
-      animate(performance.now())
+
+      /**
+       * One frame per booking. The flag is cleared before drawing, so anything
+       * that changes during the frame — the camera coasting on under damping,
+       * most of all — books the next one through `requestRender` and the
+       * viewport keeps going exactly as long as it has something new to show.
+       */
+      const renderOnce = (now: number): void => {
+        frame = 0
+
+        // Under the rate lock a frame that arrives inside the budget is held
+        // over rather than dropped: the request stands, so it is re-booked for
+        // the next display tick and lands in the slot it was owed.
+        if (rateLockedRef.current && now - lastDraw < LOCKED_FRAME_MS - FRAME_SLACK_MS) {
+          frame = requestAnimationFrame(renderOnce)
+          return
+        }
+
+        needsRenderRef.current = false
+        draw(now)
+      }
+
+      const requestRender = (): void => {
+        needsRenderRef.current = true
+        if (frame === 0) frame = requestAnimationFrame(renderOnce)
+      }
+      requestRenderRef.current = requestRender
+
+      // Orbit, pan and zoom all land here, damped tail included.
+      controls.addEventListener('change', requestRender)
+
+      const resize = (): void => {
+        const { clientWidth, clientHeight } = container
+        if (clientWidth === 0 || clientHeight === 0) return
+        renderer.setSize(clientWidth, clientHeight, false)
+        camera.aspect = clientWidth / clientHeight
+        camera.updateProjectionMatrix()
+        requestRender()
+      }
+      resize()
+
+      // Fires once on observe(), which is what draws the opening frame; the
+      // request above covers a container that has no size yet.
+      const observer = new ResizeObserver(resize)
+      observer.observe(container)
+
+      // Meshes may have been added while the GPU device was still being
+      // acquired, when the request above was still a no-op.
+      requestRender()
 
       return () => {
-        cancelAnimationFrame(frame)
+        if (frame !== 0) cancelAnimationFrame(frame)
+        needsRenderRef.current = false
+        // Nothing left to draw with: later requests must not book a frame
+        // against a disposed renderer.
+        requestRenderRef.current = () => {}
         observer.disconnect()
+        controls.removeEventListener('change', requestRender)
         controls.dispose()
         safeDispose(renderer)
         renderer.domElement.remove()
@@ -352,6 +412,10 @@ export function ThreeViewport({
 
     for (const mesh of meshes) add(mesh, material)
     for (const mesh of highlights) add(mesh, highlightMaterial)
+
+    // The scene changed under an otherwise idle viewport, which has no frame of
+    // its own coming.
+    requestRenderRef.current()
 
     return () => {
       material.dispose()
