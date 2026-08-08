@@ -67,10 +67,43 @@ describe('AppShell', () => {
     await newDocument()
 
     // Nothing is modelled up front any more: no part, no body, no triangle.
-    expect(screen.getByText('No parts yet.')).toBeDefined()
+    expect(screen.getByText(/Nothing has been built yet/)).toBeDefined()
     expect(screen.getByText('0 parts')).toBeDefined()
     expect(screen.getByText('0 bodies')).toBeDefined()
     expect(screen.getByText('0 triangles')).toBeDefined()
+  })
+
+  it('names the backend the geometry actually came out of', async () => {
+    render(<AppShell kernel={new StubKernel()} />)
+
+    await newDocument()
+
+    // A stub result and a B-Rep result look alike on screen. Saying which engine
+    // produced this one is the difference between the two being distinguishable
+    // and the app quietly passing mesh geometry off as production B-Rep.
+    const backend = screen.getByText(/^Kernel: /)
+    expect(backend.textContent).toContain('stub')
+    expect(backend.textContent).toContain('limited')
+    expect(backend.title).toMatch(/Not available on this backend: .*fillet/)
+  })
+
+  it('will not open a document while no backend has been resolved', async () => {
+    // No injected kernel and nothing it is allowed to load: there is no engine
+    // to model with, and starting a document anyway would put the user in an
+    // editor whose every rebuild fails.
+    render(
+      <AppShell
+        kernelOptions={{
+          backends: ['rust'],
+          importRustKernel: () => Promise.reject(new Error('binary missing')),
+        }}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toMatch(/binary missing/),
+    )
+    expect(screen.queryByTestId('three-viewport')).toBeNull()
   })
 
   it('reports a kernel failure without leaving the start screen', async () => {
@@ -91,7 +124,7 @@ describe('AppShell', () => {
   it('opens a document from the file picker', async () => {
     const opened = createDocument({ name: 'Opened', now: '2026-07-26T12:00:00.000Z' })
     vi.spyOn(fileService, 'openFile').mockResolvedValue(opened)
-    render(<AppShell />)
+    render(<AppShell kernel={new StubKernel()} />)
 
     await userEvent.click(screen.getByRole('button', { name: /Open File/ }))
 
@@ -112,7 +145,7 @@ describe('AppShell', () => {
 
   it('surfaces an open failure as an alert', async () => {
     vi.spyOn(fileService, 'openFile').mockRejectedValue(new Error('bad file'))
-    render(<AppShell />)
+    render(<AppShell kernel={new StubKernel()} />)
 
     await userEvent.click(screen.getByRole('button', { name: /Open File/ }))
 
@@ -280,7 +313,7 @@ describe('crash recovery', () => {
   it('reopens it in the editor, still marked as unsaved', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     seedRecovery('Bracket', true)
-    render(<AppShell />)
+    render(<AppShell kernel={new StubKernel()} />)
 
     await userEvent.click(screen.getByRole('button', { name: 'Restore' }))
 
@@ -312,6 +345,18 @@ describe('crash recovery', () => {
 
     expect(screen.queryByLabelText('Recovered document')).toBeNull()
     expect(window.localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull()
+  })
+
+  it('can still be discarded while the geometry kernel is loading', async () => {
+    seedRecovery('Bracket', true)
+    // No injected kernel and a backend that never resolves, so the shell sits in
+    // its loading state for the whole test. Throwing the recovered copy away
+    // needs nothing from the kernel, and used to be blocked anyway.
+    render(<AppShell kernelOptions={{ backends: ['rust'], importRustKernel: () => new Promise(() => {}) }} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+
+    expect(screen.queryByLabelText('Recovered document')).toBeNull()
   })
 
   it('ignores a payload it cannot read, and clears it', () => {

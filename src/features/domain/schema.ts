@@ -1,3 +1,4 @@
+import type { SelectionKind } from '../../view/selection'
 import { FeatureType } from './FeatureType'
 import { cloneParameters, type FeatureParameters } from './parameters'
 import {
@@ -48,15 +49,41 @@ export const SPLIT_KEEPS = ['both', 'front', 'back'] as const
 export const DIRECT_EDITS = ['move-face', 'offset-face', 'delete-face'] as const
 export type DirectEditKind = (typeof DIRECT_EDITS)[number]
 
-/** One editable parameter, as the properties panel renders it. */
+/**
+ * One editable parameter, as the properties panel renders it.
+ *
+ * A `selection` field is filled from the viewport rather than typed. Everything
+ * that names a piece of geometry is one: an edge id or a face id is something a
+ * user points at, and asking them to type `face-3` was only ever a placeholder
+ * for a picker that did not exist yet.
+ */
 export interface ParameterField {
   readonly key: string
   readonly label: string
-  readonly kind: 'number' | 'text' | 'boolean' | 'choice'
+  readonly kind: 'number' | 'text' | 'boolean' | 'choice' | 'selection'
   readonly options?: readonly string[]
   readonly unit?: 'mm' | 'deg'
   readonly step?: number
   readonly min?: number
+  /** What a `selection` field accepts. */
+  readonly select?: SelectionKind
+  /** Whether a `selection` field holds a list or a single reference. */
+  readonly multiple?: boolean
+}
+
+/**
+ * A field filled by pointing at geometry.
+ *
+ * `multiple` defaults to true because almost every one of these is a list —
+ * the edges to round, the faces to open — and the single-reference cases say so.
+ */
+function pick(
+  key: string,
+  label: string,
+  select: SelectionKind,
+  multiple = true,
+): ParameterField {
+  return { key, label, kind: 'selection', select, multiple }
 }
 
 function num(
@@ -135,18 +162,21 @@ const FIELDS: Record<FeatureType, readonly ParameterField[]> = {
     num('radius', 'Radius', { unit: 'mm', min: 0, step: 0.5 }),
     flag('variableRadius', 'Variable radius'),
     num('endRadius', 'End radius', { unit: 'mm', min: 0, step: 0.5 }),
-    { key: 'edgeIds', label: 'Edges', kind: 'text' },
+    pick('edgeIds', 'Edges', 'edge'),
+    pick('bodyIds', 'Bodies', 'body'),
   ],
   [FeatureType.Chamfer]: [
     num('distance', 'Distance', { unit: 'mm', min: 0, step: 0.5 }),
     choice('method', 'Method', CHAMFER_METHODS),
     num('secondDistance', 'Second distance', { unit: 'mm', min: 0, step: 0.5 }),
     num('angle', 'Angle', { unit: 'deg', step: 1 }),
-    { key: 'edgeIds', label: 'Edges', kind: 'text' },
+    pick('edgeIds', 'Edges', 'edge'),
+    pick('bodyIds', 'Bodies', 'body'),
   ],
   [FeatureType.Shell]: [
     num('thickness', 'Thickness', { unit: 'mm', min: 0, step: 0.5 }),
-    { key: 'faceIds', label: 'Faces to remove', kind: 'text' },
+    pick('faceIds', 'Faces to remove', 'face'),
+    pick('bodyIds', 'Bodies', 'body'),
   ],
   [FeatureType.Hole]: [
     num('diameter', 'Diameter', { unit: 'mm', min: 0, step: 0.5 }),
@@ -164,7 +194,8 @@ const FIELDS: Record<FeatureType, readonly ParameterField[]> = {
   [FeatureType.Draft]: [
     num('angle', 'Angle', { unit: 'deg', step: 1 }),
     num('neutralOffset', 'Neutral offset', { unit: 'mm', step: 1 }),
-    { key: 'faceIds', label: 'Faces', kind: 'text' },
+    pick('faceIds', 'Faces', 'face'),
+    pick('bodyIds', 'Bodies', 'body'),
   ],
   [FeatureType.Pattern]: [
     choice('patternType', 'Type', PATTERN_TYPES),
@@ -173,8 +204,9 @@ const FIELDS: Record<FeatureType, readonly ParameterField[]> = {
     num('count2', 'Second count', { min: 1, step: 1 }),
     num('spacing2', 'Second spacing', { unit: 'mm', step: 1 }),
     num('totalAngle', 'Total angle', { unit: 'deg', step: 5 }),
+    pick('bodyIds', 'Bodies', 'body'),
   ],
-  [FeatureType.Mirror]: [choice('plane', 'Mirror plane', MIRROR_PLANES)],
+  [FeatureType.Mirror]: [choice('plane', 'Mirror plane', MIRROR_PLANES), pick('bodyIds', 'Bodies', 'body'),],
   [FeatureType.Scale]: [
     flag('uniform', 'Uniform'),
     num('factor', 'Factor', { min: 0, step: 0.1 }),
@@ -185,16 +217,20 @@ const FIELDS: Record<FeatureType, readonly ParameterField[]> = {
   [FeatureType.Combine]: [
     choice('operation', 'Operation', COMBINE_OPERATIONS),
     flag('keepTools', 'Keep tools'),
+    pick('bodyIds', 'Bodies', 'body'),
+    pick('targetBodyId', 'Target body', 'body', false),
   ],
   [FeatureType.Split]: [
     choice('keep', 'Keep', SPLIT_KEEPS),
     num('offset', 'Plane offset', { unit: 'mm', step: 1 }),
     choice('plane', 'Split plane', MIRROR_PLANES),
+    pick('bodyIds', 'Bodies', 'body'),
   ],
   [FeatureType.DirectEdit]: [
     choice('editType', 'Edit', DIRECT_EDITS),
     num('distance', 'Distance', { unit: 'mm', step: 1 }),
-    { key: 'faceIds', label: 'Faces', kind: 'text' },
+    pick('faceIds', 'Faces', 'face'),
+    pick('bodyIds', 'Bodies', 'body'),
   ],
   [FeatureType.BaseFlange]: [
     { key: 'material', label: 'Material', kind: 'text' },
@@ -245,8 +281,8 @@ const FIELDS: Record<FeatureType, readonly ParameterField[]> = {
     num('radius', 'Radius override', { unit: 'mm', min: 0, step: 0.5 }),
     flag('flip', 'Flip direction'),
   ],
-  [FeatureType.Unfold]: [{ key: 'targetBodyId', label: 'Body', kind: 'text' }],
-  [FeatureType.Refold]: [{ key: 'targetBodyId', label: 'Body', kind: 'text' }],
+  [FeatureType.Unfold]: [pick('targetBodyId', 'Body', 'body', false)],
+  [FeatureType.Refold]: [pick('targetBodyId', 'Body', 'body', false)],
   [FeatureType.ExtrudeSurface]: [
     num('distance', 'Distance', { unit: 'mm', min: 0, step: 1 }),
     flag('symmetric', 'Symmetric'),

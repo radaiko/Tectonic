@@ -37,6 +37,10 @@ export interface RustWasmExports {
   massProperties(body: string): string
   boundingBox(body: string): string
   topology(body: string): string
+  /** Centroid, area, normal and surface kind per face, under `topology`'s ids. */
+  faceInfo(body: string): string
+  /** Midpoint, length and curve kind per edge, under `topology`'s ids. */
+  edgeInfo(body: string): string
   isSolid(body: string): boolean
 }
 
@@ -184,5 +188,7 @@ const REQUIRED = [
   'massProperties',
   'boundingBox',
   'topology',
+  'faceInfo',
+  'edgeInfo',
   'isSolid',
 ] as const satisfies readonly (keyof RustWasmExports)[]

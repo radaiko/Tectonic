@@ -3,6 +3,8 @@ import type { Feature } from '../features/domain/Feature'
 import type { FeatureParameters, ParameterValue } from '../features/domain/parameters'
 import type { ParameterField } from '../features/domain/schema'
 import { parameterFields } from '../features/domain/schema'
+import type { SelectionItem, SelectionKind } from '../view/selection'
+import { EMPTY_SELECTION, selectionIds } from '../view/selection'
 import { featureIcon } from './FeatureTreePanel'
 import './FeaturePropertiesPanel.css'
 
@@ -18,6 +20,17 @@ export interface FeaturePropertiesPanelProps {
   readonly onChange?: (featureId: string, changes: FeatureParameters) => void
   /** Results of the last rebuild — body count, extent, whatever the caller has. */
   readonly computed?: readonly ComputedValue[]
+  /**
+   * What is picked in the viewport right now. A field that names geometry is
+   * filled from this rather than typed — pointing at an edge is how a user says
+   * which edge, and `face-3` was never something anyone could be expected to
+   * know.
+   */
+  readonly selection?: readonly SelectionItem[]
+  /** Asks the viewport to restrict picking to what the field being filled wants. */
+  readonly onPickKindChange?: (kind: SelectionKind | null) => void
+  /** The field currently taking picks, so it can read as armed. */
+  readonly activePickKey?: string | null
 }
 
 /**
@@ -29,6 +42,9 @@ export function FeaturePropertiesPanel({
   feature,
   onChange,
   computed = [],
+  selection = EMPTY_SELECTION,
+  onPickKindChange,
+  activePickKey = null,
 }: FeaturePropertiesPanelProps): React.ReactElement {
   const emit = useCallback(
     (key: string, value: ParameterValue) => {
@@ -60,14 +76,26 @@ export function FeaturePropertiesPanel({
       ) : null}
 
       <dl className="properties__fields">
-        {parameterFields(feature.featureType).map((field) => (
-          <ParameterInput
-            key={field.key}
-            field={field}
-            value={feature.parameters[field.key]}
-            onChange={(value) => emit(field.key, value)}
-          />
-        ))}
+        {parameterFields(feature.featureType).map((field) =>
+          field.kind === 'selection' ? (
+            <SelectionInput
+              key={field.key}
+              field={field}
+              value={feature.parameters[field.key]}
+              selection={selection}
+              armed={activePickKey === field.key}
+              onArm={(armed) => onPickKindChange?.(armed ? (field.select ?? null) : null)}
+              onChange={(value) => emit(field.key, value)}
+            />
+          ) : (
+            <ParameterInput
+              key={field.key}
+              field={field}
+              value={feature.parameters[field.key]}
+              onChange={(value) => emit(field.key, value)}
+            />
+          ),
+        )}
       </dl>
 
       {computed.length > 0 ? (
@@ -85,6 +113,115 @@ export function FeaturePropertiesPanel({
       ) : null}
     </div>
   )
+}
+
+interface SelectionInputProps {
+  readonly field: ParameterField
+  readonly value: ParameterValue | undefined
+  readonly selection: readonly SelectionItem[]
+  readonly armed: boolean
+  readonly onArm: (armed: boolean) => void
+  readonly onChange: (value: ParameterValue) => void
+}
+
+/**
+ * A parameter filled by pointing at geometry.
+ *
+ * What is stored is still a list of identifiers — that is what the kernel takes
+ * — but the user never sees or types one. They arm the field, pick in the
+ * viewport, and press Add; each reference then shows as a chip they can drop.
+ */
+function SelectionInput({
+  field,
+  value,
+  selection,
+  armed,
+  onArm,
+  onChange,
+}: SelectionInputProps): React.ReactElement {
+  const multiple = field.multiple !== false
+  const current = currentIds(value)
+  const kind = field.select ?? 'face'
+  const picked = selectionIds(selection, kind)
+  const additions = picked.filter((id) => !current.includes(id))
+
+  const commit = (ids: readonly string[]): void => {
+    onChange(multiple ? [...ids] : (ids[0] ?? ''))
+  }
+
+  return (
+    <div className="properties__row properties__row--selection">
+      <dt>
+        <span id={`param-${field.key}-label`}>{field.label}</span>
+      </dt>
+      <dd>
+        {current.length === 0 ? (
+          <p className="properties__empty-field">
+            Nothing chosen — every {kind} of the target is used.
+          </p>
+        ) : (
+          <ul className="properties__chips" aria-labelledby={`param-${field.key}-label`}>
+            {current.map((id) => (
+              <li key={id}>
+                <button
+                  type="button"
+                  className="properties__chip"
+                  aria-label={`Remove ${id} from ${field.label}`}
+                  onClick={() => commit(current.filter((other) => other !== id))}
+                >
+                  <span>{id}</span>
+                  <span aria-hidden="true">×</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="properties__pick">
+          <button
+            type="button"
+            className="properties__pick-toggle"
+            aria-pressed={armed}
+            onClick={() => onArm(!armed)}
+          >
+            {armed ? `Picking ${plural(kind)}…` : `Pick ${plural(kind)}`}
+          </button>
+          <button
+            type="button"
+            disabled={additions.length === 0}
+            onClick={() =>
+              commit(multiple ? [...current, ...additions] : [additions[0] as string])
+            }
+          >
+            {additions.length === 0
+              ? `No new ${kind} picked`
+              : `Add ${additions.length} ${additions.length === 1 ? kind : plural(kind)}`}
+          </button>
+          {current.length > 0 ? (
+            <button type="button" onClick={() => commit([])}>
+              Clear
+            </button>
+          ) : null}
+        </div>
+      </dd>
+    </div>
+  )
+}
+
+/**
+ * How a selection kind reads in the plural. Only "body" needs telling; adding an
+ * "s" to it gave "Pick bodys", which reads as a typo because it is one.
+ */
+function plural(kind: SelectionKind): string {
+  return kind === 'body' ? 'bodies' : `${kind}s`
+}
+
+/** The identifiers a selection parameter currently holds, list or single. */
+function currentIds(value: ParameterValue | undefined): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string')
+  }
+  return typeof value === 'string' && value.length > 0 ? [value] : []
 }
 
 interface ParameterInputProps {

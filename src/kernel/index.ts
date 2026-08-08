@@ -11,6 +11,7 @@ export type {
   HoleParams,
   IBRepKernel,
   IKernel,
+  KernelCapability,
   LoftParams,
   MassProperties,
   LoftSection,
@@ -32,7 +33,15 @@ export type {
   Vec2,
   Vec3,
 } from './IKernel'
-export { isBRepKernel, KernelError, WORLD_XY } from './IKernel'
+export {
+  isBRepKernel,
+  KERNEL_CAPABILITIES,
+  KernelError,
+  kernelSupports,
+  missingCapabilities,
+  UnsupportedOperationError,
+  WORLD_XY,
+} from './IKernel'
 export { StubKernel, toBufferGeometry, toMeshData } from './StubKernel'
 // The OpenCascade kernel is deliberately absent from this barrel as a value:
 // importing it eagerly would pull the WASM module into the main bundle. Reach it
@@ -71,3 +80,32 @@ export type {
   TopologyVertex,
 } from './topology'
 export { faceVertexIds, facesById, meshTopology } from './topology'
+export type {
+  EdgeFingerprint,
+  EdgeReference,
+  EdgeSurvey,
+  FaceFingerprint,
+  FaceReference,
+  FaceSurvey,
+  ReferenceResolution,
+  ResolvedList,
+  TopologyReference,
+} from './references'
+export {
+  edgeReference,
+  faceReference,
+  fingerprintFace,
+  isResolved,
+  resolveEdge,
+  resolveEdges,
+  resolveFace,
+  resolveFaces,
+  surveyEdgeInfo,
+  surveyEdges,
+  surveyFaceInfo,
+  surveyFaces,
+  surveyMeshEdges,
+  surveyMeshFaces,
+} from './references'
+export type { TranslatedIds } from './vocabulary'
+export { translateEdgeIds, translateFaceIds } from './vocabulary'

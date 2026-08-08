@@ -159,6 +159,26 @@ describe('serialization', () => {
     expect(restored.toJSON()).toEqual(model.toJSON())
   })
 
+  it('is shown unless it has been hidden', () => {
+    expect(new SketchModel().visible).toBe(true)
+    expect(new SketchModel({ visible: false }).visible).toBe(false)
+  })
+
+  it('round-trips whether it is hidden', () => {
+    const model = new SketchModel({ id: 's1' })
+    model.visible = false
+
+    expect(SketchModel.fromJSON(JSON.parse(JSON.stringify(model.toJSON()))).visible).toBe(false)
+  })
+
+  /** A file written before a sketch could be hidden holds none that are. */
+  it('reads a sketch written without a visibility as shown', () => {
+    const json = new SketchModel({ id: 's1' }).toJSON()
+    const { visible: _omitted, ...legacy } = json
+
+    expect(SketchModel.fromJSON(legacy).visible).toBe(true)
+  })
+
   it('clones into an independent model', () => {
     const { model } = modelWithLine()
     const copy = model.clone()

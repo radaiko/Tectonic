@@ -30,7 +30,8 @@ import type {
   Vec2,
   Vec3,
 } from './IKernel'
-import { KernelError, WORLD_XY } from './IKernel'
+import type { KernelCapability } from './IKernel'
+import { KERNEL_CAPABILITIES, KernelError, WORLD_XY } from './IKernel'
 import type { WasmLoadOptions } from './wasm/WasmLoader'
 import { loadOpenCascade } from './wasm/WasmLoader'
 
@@ -79,6 +80,9 @@ const TWIST_DEGREES_PER_SECTION = 30
  */
 export class OpenCascadeKernel implements IBRepKernel {
   readonly name = 'opencascade'
+
+  /** A full B-Rep backend: every operation the interface names is a real one. */
+  readonly capabilities: readonly KernelCapability[] = [...KERNEL_CAPABILITIES]
 
   readonly #occt: OcctKernel
   readonly #shapes = new Map<string, OcctShape>()

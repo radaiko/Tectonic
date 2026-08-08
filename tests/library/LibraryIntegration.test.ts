@@ -148,7 +148,7 @@ describe('inserting into an assembly', () => {
 
   it('defaults to a single instance at the top level', () => {
     const tree = new AssemblyTree()
-    const { components } = insertStandardPart(new LibraryCatalog() && tree, new LibraryCatalog(), {
+    const { components } = insertStandardPart(tree, new LibraryCatalog(), {
       familyId: 'hex-nut',
       size: 'M8',
     })

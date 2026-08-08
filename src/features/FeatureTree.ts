@@ -182,6 +182,19 @@ export class FeatureTree {
     return new FeatureTree(json.features.map(featureFromUnknown), json.rollBarIndex)
   }
 
+  /**
+   * Refills this tree from a snapshot, **in place**.
+   *
+   * Undo has to rewind the very tree the editor, the panels and the engine are
+   * all holding. Handing back a replacement would leave every one of them
+   * pointing at the history as it was before the undo — so this mutates instead,
+   * the same way {@link restoreModel} does for a sketch.
+   */
+  restore(json: FeatureTreeJSON): void {
+    this.#features = json.features.map(featureFromUnknown)
+    this.#rollBarIndex = clampIndex(json.rollBarIndex, this.#features.length)
+  }
+
   /** Deep copy — used to trial a reorder or an edit before committing to it. */
   clone(): FeatureTree {
     return FeatureTree.fromJSON(this.toJSON())

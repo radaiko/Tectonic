@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
+import { useCallback, useMemo, useReducer, useState } from 'react'
 import { ThreeViewport } from '../3d/ThreeViewport'
 import type { ClipPlane } from '../3d/ThreeViewport'
 import type { MeshData } from '../domain/MeshData'
@@ -78,7 +78,6 @@ export function AssemblyEditor({
   const explode = useMemo(() => new ExplodedView(), [])
 
   const [revision, bumpRevision] = useReducer((count: number) => count + 1, 0)
-  const [solution, setSolution] = useState<MateSolution | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [collapsedIds, setCollapsedIds] = useState<readonly string[]>([])
   const [menu, setMenu] = useState<MenuState | null>(null)
@@ -89,12 +88,24 @@ export function AssemblyEditor({
   const [sectionOffset, setSectionOffset] = useState(0)
   const [interference, setInterference] = useState<readonly InterferencePair[] | null>(null)
 
-  // Solving writes the result straight back into the tree, so the placements the
-  // panels read and the ones the viewport draws are the same numbers.
-  useEffect(() => {
+  /**
+   * The solved assembly, worked out as this render's placements rather than
+   * settled afterwards.
+   *
+   * Solving writes the result straight back into the tree, so the placements the
+   * panels read and the ones the viewport draws are the same numbers. That is why
+   * it belongs here and not in an effect: an effect runs after the render it
+   * belongs to, so the panels drew the *previous* solve and only caught up on the
+   * extra render that storing the result forced. Deriving it means the first paint
+   * after any edit is already the solved one.
+   *
+   * Re-deriving is harmless: a solved assembly solves to itself, so recomputing
+   * this — as React may at any time — applies the same placements again.
+   */
+  const solution = useMemo<MateSolution>(() => {
     const result = solver.solve()
     solver.apply(result)
-    setSolution(result)
+    return result
   }, [revision, solver])
 
   const touch = useCallback(() => {
@@ -720,7 +731,7 @@ function MateParameters({
           type="checkbox"
           checked={mate.isLocked}
           onChange={(event) => {
-            mate.isLocked = event.target.checked
+            mate.setLocked(event.target.checked)
             onChange()
           }}
         />

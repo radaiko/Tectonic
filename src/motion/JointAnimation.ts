@@ -340,22 +340,46 @@ export interface PlaybackInit {
  */
 export class AnimationPlayback {
   readonly animation: JointAnimation
-  speed: number
-  loop: boolean
+  #speed: number
+  #loop: boolean
   #time = 0
   #playing = false
   #direction: 1 | -1
 
   constructor(animation: JointAnimation, init: PlaybackInit = {}) {
     this.animation = animation
-    this.speed = init.speed !== undefined && init.speed > 0 ? init.speed : 1
-    this.loop = init.loop ?? animation.loop
+    this.#speed = validSpeed(init.speed) ?? 1
+    this.#loop = init.loop ?? animation.loop
     this.#direction = init.reversed ? -1 : 1
     if (init.reversed) this.#time = animation.duration
   }
 
   get time(): number {
     return this.#time
+  }
+
+  /** Multiplier on the frame clock. Always positive; direction is separate. */
+  get speed(): number {
+    return this.#speed
+  }
+
+  /**
+   * Changes the rate. A speed of zero or less is refused rather than taken: it
+   * would leave the playhead pinned while the transport reported itself playing,
+   * which is a stall with no way out from the panel.
+   */
+  setSpeed(speed: number): void {
+    const valid = validSpeed(speed)
+    if (valid !== null) this.#speed = valid
+  }
+
+  /** Whether running off the end wraps round rather than stopping. */
+  get loop(): boolean {
+    return this.#loop
+  }
+
+  setLoop(loop: boolean): void {
+    this.#loop = loop
   }
 
   get playing(): boolean {
@@ -565,4 +589,10 @@ function normalizeDuration(duration: number | null): number | null {
     throw new MotionError(`Duration must be a length in seconds, got ${String(duration)}`)
   }
   return duration
+}
+
+/** A usable playback rate, or null when the value is not one. */
+function validSpeed(speed: number | undefined): number | null {
+  if (speed === undefined || !Number.isFinite(speed) || speed <= 0) return null
+  return speed
 }

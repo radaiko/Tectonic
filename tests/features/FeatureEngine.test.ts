@@ -42,16 +42,36 @@ describe('FeatureEngine', () => {
     const sketch = rectangleSketch(20, 20)
     const tree = treeOf(
       extrude(sketch, 30),
-      createFeature(FeatureType.Fillet, { id: 'fillet-1', parameters: { radius: 2 } }),
+      createFeature(FeatureType.Shell, { id: 'shell-1', parameters: { thickness: 2 } }),
     )
 
     const result = await evaluate(tree, [sketch])
 
-    expect(result.outcomes.map((outcome) => outcome.featureId)).toEqual(['extrude-1', 'fillet-1'])
+    expect(result.outcomes.map((outcome) => outcome.featureId)).toEqual(['extrude-1', 'shell-1'])
     expect(result.failures).toEqual([])
-    // The fillet takes the body over from the extrude that created it.
-    expect(result.bodiesByFeature.get('fillet-1')).toHaveLength(1)
+    // The shell takes the body over from the extrude that created it.
+    expect(result.bodiesByFeature.get('shell-1')).toHaveLength(1)
     expect(result.bodiesByFeature.get('extrude-1')).toBeUndefined()
+  })
+
+  it('reports a feature the backend cannot build rather than passing it off as built', async () => {
+    const sketch = rectangleSketch(20, 20)
+    const tree = treeOf(
+      extrude(sketch, 30),
+      createFeature(FeatureType.Fillet, { id: 'fillet-1', parameters: { radius: 2 } }),
+    )
+
+    // The stub is a mesh engine, so it cannot round an edge. The rebuild must
+    // say so: the alternative — the old behaviour — was an unfilleted body
+    // reported as a clean success, which is a wrong model with no warning on it.
+    const result = await evaluate(tree, [sketch])
+
+    expect(result.failures).toHaveLength(1)
+    expect(result.failures[0]?.featureId).toBe('fillet-1')
+    expect(result.failures[0]?.error).toMatch(/cannot fillet/)
+    expect(tree.requireFeature('fillet-1').status).toBe('error')
+    // The extrude before it still stands: one backend gap is not a lost part.
+    expect(result.bodies).toHaveLength(1)
   })
 
   it('marks a failing feature and carries on with the rest', async () => {

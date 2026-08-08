@@ -23,6 +23,11 @@ export interface SketchModelJSON {
   /** What the sketch is attached to. Absent in files written before M2. */
   readonly support?: SketchSupportJSON
   readonly gridSpacing: number
+  /**
+   * Whether the sketch is shown. Absent in files written before it could be
+   * hidden, which read as shown — the state every sketch in them was in.
+   */
+  readonly visible?: boolean
   readonly entities: readonly SketchEntityJSON[]
   readonly constraints: readonly ConstraintJSON[]
 }
@@ -34,6 +39,7 @@ export interface SketchModelInit {
   readonly plane?: SketchPlane
   readonly support?: SketchSupport
   readonly gridSpacing?: number
+  readonly visible?: boolean
 }
 
 /**
@@ -46,6 +52,13 @@ export class SketchModel {
   /** What the sketch is attached to. The single source of truth for its plane. */
   support: SketchSupport
   gridSpacing: number
+  /**
+   * Whether the sketch is shown alongside the model. Hiding one takes it off the
+   * screen without taking it out of the document: the features built on it go on
+   * rebuilding from it, because what it contributes to a solid is its profile and
+   * not its appearance.
+   */
+  visible: boolean
   readonly entities: Map<string, SketchEntity>
   readonly constraints: Map<string, Constraint>
 
@@ -54,6 +67,7 @@ export class SketchModel {
     this.name = init.name ?? 'Sketch'
     this.support = init.support ?? originPlaneSupport(init.plane ?? 'XY')
     this.gridSpacing = init.gridSpacing ?? DEFAULT_GRID_SPACING
+    this.visible = init.visible ?? true
     this.entities = new Map()
     this.constraints = new Map()
   }
@@ -169,6 +183,7 @@ export class SketchModel {
       plane: this.plane,
       support: this.support,
       gridSpacing: this.gridSpacing,
+      visible: this.visible,
       entities: [...this.entities.values()].map((entity) => entity.toJSON()),
       constraints: [...this.constraints.values()].map((constraint) => constraint.toJSON()),
     }
@@ -181,6 +196,7 @@ export class SketchModel {
       // `support` wins; `plane` is what a pre-M2 file carries instead.
       support: supportFromJSON(json.support ?? { kind: 'origin-plane', plane: json.plane }),
       gridSpacing: json.gridSpacing,
+      visible: json.visible ?? true,
     })
     for (const entity of json.entities) model.entities.set(entity.id, entityFromJSON(entity))
     for (const constraint of json.constraints) {

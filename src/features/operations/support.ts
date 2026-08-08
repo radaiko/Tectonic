@@ -1,6 +1,10 @@
 import type { PlaneFrame, Profile, ShapeHandle, Vec3 } from '../../kernel/IKernel'
 import { KernelError } from '../../kernel/IKernel'
+import type { ResolvedList } from '../../kernel/references'
+import { resolveEdges, resolveFaces, surveyEdges, surveyFaces } from '../../kernel/references'
 import type { SketchModel, SketchPlane } from '../../sketch/domain/SketchModel'
+import type { GeometryKind, StoredReference } from '../domain/geometryRefs'
+import { ID_KEYS, readReferences } from '../domain/geometryRefs'
 import { offsetFrame, planeFrame } from '../geometry/plane'
 import { SupportResolutionError, resolveSupportFrame } from '../geometry/supportFrame'
 import { sketchProfiles } from '../geometry/profile'
@@ -95,6 +99,92 @@ export function sourceSolids(context: OperationContext): Solid[] {
     throw new FeatureError('The features this one copies produced no solid')
   }
   return sources
+}
+
+/**
+ * One solid a geometry selection landed on, with the identifiers it names there.
+ *
+ * `ids` is per solid because a face id belongs to one body: handing every body
+ * the whole list would ask each kernel to find faces that were never theirs.
+ * Empty means "every one", which is how the kernels read an omitted list and
+ * how an unfilled selection field has always behaved.
+ */
+export interface GeometryTarget {
+  readonly solid: Solid
+  readonly ids: readonly string[]
+}
+
+/**
+ * The faces or edges a modifying feature acts on, as the part stands right now.
+ *
+ * When the feature carries fingerprinted references — anything picked in the
+ * viewport does — each is resolved against a fresh survey of the solid it was
+ * picked on. A reference that has been left behind by an upstream edit fails the
+ * feature with the reason, rather than resolving to whichever face inherited the
+ * identifier: that is the silent retarget this whole path exists to prevent.
+ *
+ * Without references the bare identifiers are passed through unchanged, which is
+ * what a document written before references existed holds, and what a typed-in
+ * list still means.
+ */
+export async function resolveGeometrySelection(
+  context: OperationContext,
+  kind: GeometryKind,
+): Promise<GeometryTarget[]> {
+  const params = context.feature.parameters
+  if (kind === 'face') {
+    return resolveGroups(context, 'face', readReferences(params, 'face'), async (solid, group) =>
+      resolveFaces(await surveyFaces(context.kernel, solid.shape), group),
+    )
+  }
+  return resolveGroups(context, 'edge', readReferences(params, 'edge'), async (solid, group) =>
+    resolveEdges(await surveyEdges(context.kernel, solid.shape), group),
+  )
+}
+
+async function resolveGroups<R extends StoredReference>(
+  context: OperationContext,
+  kind: GeometryKind,
+  references: readonly R[],
+  resolve: (solid: Solid, group: readonly R[]) => Promise<ResolvedList>,
+): Promise<GeometryTarget[]> {
+  if (references.length === 0) {
+    const ids = readStringArray(context.feature.parameters, ID_KEYS[kind])
+    return targetSolids(context).map((solid) => ({ solid, ids }))
+  }
+
+  // Grouped by body, in first-pick order, so a variable-radius fillet still
+  // blends along the edges in the order they were chosen.
+  const grouped = new Map<string, R[]>()
+  for (const reference of references) {
+    const held = grouped.get(reference.bodyId)
+    if (held) held.push(reference)
+    else grouped.set(reference.bodyId, [reference])
+  }
+
+  const targets: GeometryTarget[] = []
+  const failures: string[] = []
+  for (const [bodyId, group] of grouped) {
+    const solid = context.solids.find((candidate) => candidate.id === bodyId)
+    if (!solid) {
+      failures.push(
+        `The ${kind}s this feature uses were picked on ${bodyId}, which the part no longer has`,
+      )
+      continue
+    }
+
+    const resolved = await resolve(solid, group)
+    failures.push(...resolved.failures)
+    if (resolved.ids.length > 0) targets.push({ solid, ids: resolved.ids })
+  }
+
+  if (failures.length > 0) {
+    throw new FeatureError(`${failures.join('. ')}. Re-pick the ${kind}s this feature should use.`)
+  }
+  if (targets.length === 0) {
+    throw new FeatureError(`None of the ${kind}s this feature uses are part of the model any more`)
+  }
+  return targets
 }
 
 /** A base plane named by a `plane` parameter, shifted by an `offset` one. */

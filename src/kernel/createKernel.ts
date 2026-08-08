@@ -1,4 +1,5 @@
 import type { IKernel } from './IKernel'
+import { KernelError } from './IKernel'
 import type { RustLoadOptions } from './rust/RustWasm'
 import { StubKernel } from './StubKernel'
 import type { WasmLoadOptions } from './wasm/WasmLoader'
@@ -63,6 +64,11 @@ const DEFAULT_ORDER: readonly KernelBackend[] = ['rust', 'opencascade', 'stub']
  * and so always succeeds. Every attempt is separately guarded, so a machine that
  * cannot run one of them still gets the next rather than the last.
  *
+ * A caller that leaves `stub` out of the list has said mesh geometry will not do,
+ * and gets a {@link KernelError} rather than the stub when nothing else loads.
+ * The default list ends in `stub`, so the app always gets *something* — and
+ * `onFallback` is how it learns that something is not what it asked for.
+ *
  * The imports are dynamic so neither binary reaches the main bundle — the
  * browser fetches each as its own chunk, and a build that never calls this
  * function never pays for either.
@@ -70,6 +76,7 @@ const DEFAULT_ORDER: readonly KernelBackend[] = ['rust', 'opencascade', 'stub']
 export async function createKernel(options: CreateKernelOptions = {}): Promise<IKernel> {
   const { backends = DEFAULT_ORDER, onFallback, importKernel, importRustKernel, ...load } = options
 
+  const failures: string[] = []
   for (const backend of backends) {
     if (backend === 'stub') return new StubKernel()
     try {
@@ -77,13 +84,24 @@ export async function createKernel(options: CreateKernelOptions = {}): Promise<I
       await kernel.init()
       return kernel
     } catch (cause) {
-      const reason = cause instanceof Error ? cause.message : String(cause)
-      if (onFallback) onFallback(`${LABELS[backend]} could not be loaded: ${reason}`, cause)
+      const reason = `${LABELS[backend]} could not be loaded: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`
+      failures.push(reason)
+      if (onFallback) onFallback(reason, cause)
       else console.warn(`${LABELS[backend]} failed to load, trying the next backend`, cause)
     }
   }
 
-  return new StubKernel()
+  // Every backend the caller was willing to accept has been tried. Substituting
+  // the stub here would hand back mesh geometry to someone who asked for B-Rep
+  // and never said the stub would do — the whole point of narrowing the list.
+  throw new KernelError(
+    failures.length > 0
+      ? `No geometry kernel could be loaded. ${failures.join(' ')}`
+      : 'No geometry kernel was requested',
+    'createKernel',
+  )
 }
 
 const LABELS: Record<KernelBackend, string> = {

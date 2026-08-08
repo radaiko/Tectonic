@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { SketchModel } from '../../../src/sketch/domain/SketchModel'
 import { buildLine } from '../../../src/sketch/domain/builders'
 import { distance } from '../../../src/sketch/domain/geometry'
+import type {
+  SketchPointerEvent,
+  SketchTool,
+  ToolContext,
+} from '../../../src/sketch/tools/SketchTool'
 import { createToolContext, pointerEvent } from '../../../src/sketch/tools/SketchTool'
 import { ArcTool } from '../../../src/sketch/tools/ArcTool'
 import { CircleTool } from '../../../src/sketch/tools/CircleTool'
@@ -16,7 +21,14 @@ function ctx(model = new SketchModel()): ReturnType<typeof createToolContext> {
   return createToolContext({ model, snapTolerance: 0 })
 }
 
-function click(tool: { onPointerDown: Function; onPointerUp: Function }, context: ReturnType<typeof createToolContext>, x: number, y: number, init = {}): void {
+/** A press and release at one point, for the tools that build from clicks. */
+function click(
+  tool: Pick<SketchTool, 'onPointerDown' | 'onPointerUp'>,
+  context: ToolContext,
+  x: number,
+  y: number,
+  init: Partial<Omit<SketchPointerEvent, 'world'>> = {},
+): void {
   tool.onPointerDown(pointerEvent({ x, y }, init), context)
   tool.onPointerUp(pointerEvent({ x, y }, init), context)
 }

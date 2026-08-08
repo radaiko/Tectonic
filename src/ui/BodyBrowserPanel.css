@@ -1,0 +1,92 @@
+.bodies {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.bodies__title {
+  margin: 0 0 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.bodies__empty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.bodies__group {
+  margin-bottom: 0.5rem;
+}
+
+.bodies__group-title {
+  display: block;
+  width: 100%;
+  padding: 0.1rem 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.bodies__group-title:hover {
+  color: var(--text-primary);
+}
+
+.bodies__group-title--plain {
+  cursor: default;
+}
+
+.bodies__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bodies__row {
+  display: grid;
+  grid-template-columns: 1rem 1fr auto;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.2rem 0.3rem;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.bodies__row:hover {
+  background: var(--surface-raised, rgba(255, 255, 255, 0.06));
+}
+
+/* The same teal a picked body wears in the viewport, so the list and the
+   scene agree at a glance about what is selected. */
+.bodies__row--selected {
+  background: rgba(78, 201, 176, 0.18);
+  color: #4ec9b0;
+}
+
+.bodies__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bodies__count {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}

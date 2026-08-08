@@ -79,3 +79,68 @@
   font-size: 0.78rem;
   color: var(--text-secondary);
 }
+
+/* A parameter that names geometry. It stacks rather than sitting in the
+   label/value grid: chips and the pick controls need the full width. */
+.properties__row--selection {
+  display: block;
+}
+
+.properties__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.35rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.properties__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid #4ec9b0;
+  border-radius: 999px;
+  background: rgb(78 201 176 / 12%);
+  color: #4ec9b0;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.properties__empty-field {
+  margin: 0.35rem 0;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.properties__pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.35rem;
+}
+
+.properties__pick button {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.properties__pick button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Armed: this field is what the next click in the viewport goes to. */
+.properties__pick-toggle[aria-pressed='true'] {
+  border-color: #4ec9b0;
+  background: rgb(78 201 176 / 15%);
+  color: #4ec9b0;
+}

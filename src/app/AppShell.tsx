@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TectonicDocument } from '../domain/Document'
+import type { CreateKernelOptions } from '../kernel/createKernel'
 import type { IKernel } from '../kernel/IKernel'
-import { StubKernel } from '../kernel/StubKernel'
 import { openFile, saveFile } from '../io/FileService'
 import type { StoredSession } from '../io/DocumentStorage'
 import { clearSession, loadSession, saveSession } from '../io/DocumentStorage'
@@ -11,16 +11,25 @@ import { HelpOverlay } from '../ui/HelpOverlay'
 import { EditorView } from './EditorView'
 import { StartScreen } from './StartScreen'
 import { createStarterDocument } from './starterDocument'
+import { useKernel } from './useKernel'
 
 /** How long editing has to go quiet before the recovery copy is rewritten. */
 const AUTOSAVE_DELAY_MS = 500
 
 export interface AppShellProps {
+  /**
+   * A backend to model with. Left out — which is what the app itself does — the
+   * shell resolves the best one it can load through {@link createKernel}.
+   * Supplying one pins it, which is what keeps a test's geometry deterministic.
+   */
   readonly kernel?: IKernel
+  /** Passed to {@link createKernel} when no kernel is injected. */
+  readonly kernelOptions?: CreateKernelOptions
 }
 
-export function AppShell({ kernel }: AppShellProps): React.ReactElement {
-  const activeKernel = useMemo(() => kernel ?? new StubKernel(), [kernel])
+export function AppShell({ kernel, kernelOptions }: AppShellProps): React.ReactElement {
+  const session = useKernel(kernel, kernelOptions)
+  const activeKernel = session.kernel
   const [document, setDocument] = useState<TectonicDocument | null>(null)
   /**
    * Bumped whenever a *different* document is loaded. Used as the editor's key,
@@ -109,8 +118,16 @@ export function AppShell({ kernel }: AppShellProps): React.ReactElement {
     setBusy(true)
     setError(undefined)
     try {
-      // The kernel is warmed up here rather than on first extrude, so a backend
-      // that cannot load is reported before the user has drawn anything.
+      // Nothing can be modelled without a backend, so a document is not opened
+      // until there is one. The two ways there can be none read differently: a
+      // load still in flight is worth waiting for, a failed one is not.
+      if (!activeKernel) {
+        throw new Error(
+          session.error ?? 'the geometry kernel is still loading — try again in a moment',
+        )
+      }
+      // Warmed up here rather than on first extrude, so a backend that cannot
+      // come up is reported before the user has drawn anything.
       await activeKernel.init()
       enterDocument(createStarterDocument(), false)
     } catch (cause) {
@@ -118,27 +135,32 @@ export function AppShell({ kernel }: AppShellProps): React.ReactElement {
     } finally {
       setBusy(false)
     }
-  }, [activeKernel, confirmDiscard, enterDocument])
+  }, [activeKernel, confirmDiscard, enterDocument, session.error])
 
   const handleOpenFile = useCallback(async () => {
     if (!confirmDiscard()) return
     setError(undefined)
     try {
+      if (!activeKernel) throw new Error(session.error ?? 'the geometry kernel is still loading')
       const opened = await openFile()
       // A null result means the picker was dismissed — stay on the start screen.
       if (opened) enterDocument(opened, false)
     } catch (cause) {
       setError(`Could not open file: ${(cause as Error).message}`)
     }
-  }, [confirmDiscard, enterDocument])
+  }, [activeKernel, confirmDiscard, enterDocument, session.error])
 
   /** Reopens the copy the last session left behind. */
   const handleRestore = useCallback(() => {
     if (!recovery) return
     if (!confirmDiscard()) return
     setError(undefined)
+    if (!activeKernel) {
+      setError(`Could not restore document: ${session.error ?? 'the geometry kernel is still loading'}`)
+      return
+    }
     enterDocument(recovery.document, recovery.dirty)
-  }, [confirmDiscard, enterDocument, recovery])
+  }, [activeKernel, confirmDiscard, enterDocument, recovery, session.error])
 
   const handleDiscardRecovery = useCallback(() => {
     clearSession()
@@ -258,10 +280,14 @@ export function AppShell({ kernel }: AppShellProps): React.ReactElement {
 
   return (
     <>
-      {document ? (
+      {document && activeKernel ? (
         <EditorView
           key={sessionKey}
           document={document}
+          kernel={activeKernel}
+          kernelBackend={session.backend ?? activeKernel.name}
+          kernelFallbacks={session.fallbacks}
+          kernelMissing={session.missing}
           // Read once per session, as the editor mounts: a restored document
           // opens with edits already in it, and the editor owns the flag from
           // there on.
@@ -279,8 +305,8 @@ export function AppShell({ kernel }: AppShellProps): React.ReactElement {
           recovery={recovery}
           onRestore={handleRestore}
           onDiscardRecovery={handleDiscardRecovery}
-          busy={busy}
-          error={error}
+          busy={busy || session.status === 'loading'}
+          error={error ?? (session.status === 'failed' ? (session.error ?? undefined) : undefined)}
         />
       )}
 

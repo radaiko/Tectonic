@@ -12,6 +12,8 @@
  * reference survives the rebuild, and the plane is recomputed from it.
  */
 
+import type { FaceFingerprint } from '../../kernel/references'
+
 /** One of the three planes every document starts with. */
 export type SketchPlane = 'XY' | 'XZ' | 'YZ'
 
@@ -30,9 +32,15 @@ export interface OriginPlaneSupport {
 }
 
 /**
- * A sketch on a planar face of a solid. The face is named by the body it
- * belongs to and the face id that body's topology hands out, so the reference
- * outlives a rebuild that leaves the face where it was.
+ * A sketch on a planar face of a solid.
+ *
+ * The face is named by the body it belongs to and the face id that body's
+ * topology hands out. Both backends derive that id from the geometry, so it
+ * survives a rebuild that leaves the face where it was — but not one that moves
+ * it, which is most of what parametric editing does. The fingerprint is what
+ * carries the reference across those: it records the face's plane, size and
+ * whether it was the outermost one facing its way, and resolution looks for the
+ * one face that can still be shown to be the same one.
  */
 export interface FaceSupport {
   readonly kind: 'face'
@@ -40,6 +48,12 @@ export interface FaceSupport {
   readonly faceId: string
   /** Distance along the face's outward normal. Zero for a sketch on the face. */
   readonly offset: number
+  /**
+   * The face's geometry when the sketch was attached. Absent on a sketch made
+   * before fingerprints existed, or read from a file written then — such a
+   * support resolves by id alone, which is what it always did.
+   */
+  readonly fingerprint?: FaceFingerprint
 }
 
 export type SketchSupport = OriginPlaneSupport | FaceSupport
@@ -51,8 +65,19 @@ export function originPlaneSupport(plane: SketchPlane, offset = 0): OriginPlaneS
   return { kind: 'origin-plane', plane, offset }
 }
 
-export function faceSupport(bodyId: string, faceId: string, offset = 0): FaceSupport {
-  return { kind: 'face', bodyId, faceId, offset }
+export function faceSupport(
+  bodyId: string,
+  faceId: string,
+  offset = 0,
+  fingerprint?: FaceFingerprint,
+): FaceSupport {
+  return {
+    kind: 'face',
+    bodyId,
+    faceId,
+    offset,
+    ...(fingerprint === undefined ? {} : { fingerprint }),
+  }
 }
 
 export function isOriginPlaneSupport(support: SketchSupport): support is OriginPlaneSupport {
@@ -88,12 +113,44 @@ export function supportFromJSON(value: unknown, fallback: SketchPlane = 'XY'): S
   if (candidate.kind === 'face') {
     const { bodyId, faceId } = candidate
     if (typeof bodyId === 'string' && bodyId !== '' && typeof faceId === 'string' && faceId !== '') {
-      return faceSupport(bodyId, faceId, offset)
+      const fingerprint = fingerprintFromJSON(candidate.fingerprint)
+      return fingerprint
+        ? faceSupport(bodyId, faceId, offset, fingerprint)
+        : faceSupport(bodyId, faceId, offset)
     }
     return originPlaneSupport(fallback, offset)
   }
 
   return originPlaneSupport(isSketchPlane(candidate.plane) ? candidate.plane : fallback, offset)
+}
+
+/**
+ * Reads a fingerprint back, or null when the value is not a whole one.
+ *
+ * All or nothing: a half-read fingerprint would match the wrong face rather than
+ * failing, and a support with none at least says so.
+ */
+function fingerprintFromJSON(value: unknown): FaceFingerprint | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const candidate = value as Record<string, unknown>
+  const normal = vec3FromJSON(candidate.normal)
+  const centroid = vec3FromJSON(candidate.centroid)
+  if (!normal || !centroid) return null
+  if (typeof candidate.offset !== 'number' || typeof candidate.area !== 'number') return null
+  return {
+    normal,
+    centroid,
+    offset: candidate.offset,
+    area: candidate.area,
+    outermost: candidate.outermost === true,
+  }
+}
+
+function vec3FromJSON(value: unknown): { x: number; y: number; z: number } | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const { x, y, z } = value as Record<string, unknown>
+  if (typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number') return null
+  return { x, y, z }
 }
 
 /** How a support reads in the sketch list, e.g. "XZ plane" or "Face of body-1". */

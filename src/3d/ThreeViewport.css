@@ -1,4 +1,5 @@
 .viewport {
+  position: relative;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -26,4 +27,130 @@
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/*
+ * The keyboard and screen-reader half of picking a plane. It sits over the
+ * canvas, so the group itself has to stay out of the pointer's way — only the
+ * entries take events, or the strip would swallow orbits over that corner.
+ */
+.viewport__planes {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: calc(100% - 1.5rem);
+  pointer-events: none;
+}
+
+.viewport__plane {
+  pointer-events: auto;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.3rem;
+  background: rgb(20 23 26 / 82%);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+/* Border colours match the tint each plane is drawn with in the scene. */
+.viewport__plane[data-plane='XY'] {
+  border-left: 3px solid #4d9bd9;
+}
+
+.viewport__plane[data-plane='XZ'] {
+  border-left: 3px solid #5fbf7a;
+}
+
+.viewport__plane[data-plane='YZ'] {
+  border-left: 3px solid #d96a6a;
+}
+
+.viewport__plane:hover,
+.viewport__plane[data-hovered] {
+  background: rgb(38 43 49 / 92%);
+  color: var(--text-primary);
+}
+
+.viewport__plane:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.viewport__plane[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: rgb(77 155 217 / 22%);
+  color: var(--text-primary);
+}
+
+.viewport__planes-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+/* The selection, as the accessibility tree can reach it. Sits opposite the
+   plane legend so the two never fight for the same corner. */
+.viewport__selection {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  max-width: 16rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgb(26 29 33 / 88%);
+  font-size: 0.78rem;
+}
+
+.viewport__selection-count {
+  margin: 0 0 0.5rem;
+  color: var(--text-dim);
+}
+
+.viewport__selection-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.viewport__selection-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid #4ec9b0;
+  border-radius: 999px;
+  background: rgb(78 201 176 / 12%);
+  color: #4ec9b0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.viewport__selection-clear {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Present to a screen reader, absent on screen. */
+.viewport__visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

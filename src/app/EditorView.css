@@ -80,6 +80,16 @@
   background: var(--surface-raised);
 }
 
+/* The feature tree takes the slack in the 3D surface, so the sketch controls
+   under it keep their natural height instead of being pushed out of reach. */
+.editor__panel-grow {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 0.9rem;
+}
+
 .editor__panel--right {
   border-right: none;
   border-left: 1px solid var(--border);
@@ -87,6 +97,45 @@
 
 .editor__failures {
   color: #f85149;
+}
+
+.editor__history {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: 0.5rem;
+}
+
+/* Sits above the status bar rather than over the model: what it has to say is
+   worth reading, and never worth covering the part up for. */
+.editor__notice {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--border);
+  background: #2b2418;
+  color: #e3b341;
+  font-size: 0.85rem;
+}
+
+.editor__notice-close {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Which geometry engine the part came out of. Normally a quiet read-out; it
+   only draws attention to itself when the backend cannot do everything. */
+.editor__backend {
+  cursor: help;
+}
+
+.editor__backend--limited {
+  color: #e3b341;
 }
 
 .editor__panel-title {

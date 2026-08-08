@@ -43,7 +43,10 @@ export function StartScreen({
               <Button variant="primary" onClick={onRestore} disabled={busy}>
                 Restore
               </Button>
-              <Button variant="ghost" onClick={onDiscardRecovery} disabled={busy}>
+              {/* Not gated on `busy`: throwing the recovered copy away needs
+                  nothing from the geometry kernel, and blocking it while one
+                  loads leaves the user staring at a panel they asked to close. */}
+              <Button variant="ghost" onClick={onDiscardRecovery}>
                 Discard
               </Button>
             </div>

@@ -226,6 +226,25 @@ export interface TessellationParams {
 }
 
 /**
+ * An operation a backend may or may not be able to carry out.
+ *
+ * Only operations that a real backend genuinely might lack are listed. Anything
+ * every backend must implement to be a kernel at all — extrude, the booleans,
+ * tessellation — is not a capability, it is the contract.
+ */
+export const KERNEL_CAPABILITIES = [
+  'fillet',
+  'chamfer',
+  'shell',
+  'draft',
+  'hole',
+  'split',
+  'directEdit',
+] as const
+
+export type KernelCapability = (typeof KERNEL_CAPABILITIES)[number]
+
+/**
  * The geometry engine contract. Everything above `kernel/` talks to solids only
  * through this interface so the backing implementation (stub today, OpenCascade
  * WASM later) can be swapped without touching callers.
@@ -233,6 +252,12 @@ export interface TessellationParams {
 export interface IKernel {
   /** Human-readable backend identifier, e.g. "stub" or "opencascade". */
   readonly name: string
+
+  /**
+   * What this backend can actually do. Callers check this to offer — or refuse —
+   * an operation up front, rather than discovering the gap mid-rebuild.
+   */
+  readonly capabilities: readonly KernelCapability[]
 
   /** Resolves once the backend is ready to accept operations. */
   init(): Promise<void>
@@ -369,4 +394,40 @@ export class KernelError extends Error {
     this.name = 'KernelError'
     this.operation = operation
   }
+}
+
+/**
+ * Thrown when a backend is asked for something it cannot do.
+ *
+ * Distinct from a plain {@link KernelError} because the two call for different
+ * answers: a kernel error is this model going wrong, an unsupported operation is
+ * this *backend* being unable to model it at all, and only the second is worth
+ * telling the user to change backend over. Returning the geometry unchanged
+ * instead would report a fillet that never happened as a success.
+ */
+export class UnsupportedOperationError extends KernelError {
+  readonly capability: KernelCapability
+
+  constructor(kernelName: string, capability: KernelCapability) {
+    super(
+      `The "${kernelName}" backend cannot ${capability} — this operation needs a B-Rep kernel`,
+      capability,
+    )
+    this.name = 'UnsupportedOperationError'
+    this.capability = capability
+  }
+}
+
+/** Whether a backend can carry out an operation at all. */
+export function kernelSupports(kernel: IKernel, capability: KernelCapability): boolean {
+  return kernel.capabilities.includes(capability)
+}
+
+/**
+ * The capabilities a backend is missing, in the canonical order. Empty for a
+ * complete one — which is what lets the UI say nothing when there is nothing to
+ * warn about.
+ */
+export function missingCapabilities(kernel: IKernel): KernelCapability[] {
+  return KERNEL_CAPABILITIES.filter((capability) => !kernel.capabilities.includes(capability))
 }

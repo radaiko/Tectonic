@@ -168,8 +168,8 @@ export function AnimationPanel({
             value={speed}
             onChange={(event) => {
               const next = Number(event.target.value)
-              playback.speed = next
-              setSpeed(next)
+              playback.setSpeed(next)
+              setSpeed(playback.speed)
             }}
           >
             {PLAYBACK_SPEEDS.map((option) => (
@@ -185,7 +185,7 @@ export function AnimationPanel({
             type="checkbox"
             checked={playback.loop}
             onChange={(event) => {
-              playback.loop = event.target.checked
+              playback.setLoop(event.target.checked)
               bump((count) => count + 1)
             }}
           />

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { KernelError, WORLD_XY } from '../../src/kernel/IKernel'
+import { KernelError, UnsupportedOperationError, WORLD_XY } from '../../src/kernel/IKernel'
 import type { PlaneFrame, Profile } from '../../src/kernel/IKernel'
 import { StubKernel, toBufferGeometry, toMeshData } from '../../src/kernel/StubKernel'
+import { meshTopology } from '../../src/kernel/topology'
+import type { TopologyFace } from '../../src/kernel/topology'
 import type { MeshData } from '../../src/domain/MeshData'
 import { triangleCount, vertexCount } from '../../src/domain/MeshData'
 
@@ -515,15 +517,22 @@ describe('StubKernel booleans', () => {
 })
 
 describe('StubKernel detail operations', () => {
-  it('returns fillet and chamfer unchanged but validated', async () => {
+  it('refuses fillet and chamfer rather than returning the solid unchanged', async () => {
     const kernel = new StubKernel()
     const shape = await kernel.createBox({ width: 10, height: 10, depth: 10 })
 
-    const filleted = await kernel.triangulate(await kernel.fillet(shape, { radius: 2 }))
-    const chamfered = await kernel.triangulate(await kernel.chamfer(shape, { distance: 2 }))
+    // The whole point: a mesh engine cannot round or bevel an edge, and handing
+    // the solid back untouched would report a fillet that never happened.
+    await expect(kernel.fillet(shape, { radius: 2 })).rejects.toThrow(UnsupportedOperationError)
+    await expect(kernel.chamfer(shape, { distance: 2 })).rejects.toThrow(UnsupportedOperationError)
+    expect(kernel.capabilities).not.toContain('fillet')
+    expect(kernel.capabilities).not.toContain('chamfer')
+  })
 
-    expect(volumeOf(filleted)).toBeCloseTo(1000, 3)
-    expect(volumeOf(chamfered)).toBeCloseTo(1000, 3)
+  it('blames the caller before the backend when the parameters are nonsense', async () => {
+    const kernel = new StubKernel()
+    const shape = await kernel.createBox({ width: 10, height: 10, depth: 10 })
+
     await expect(kernel.fillet(shape, { radius: 0 })).rejects.toThrow(/radius must be positive/)
     await expect(kernel.chamfer(shape, { distance: 0 })).rejects.toThrow(/must be positive/)
     await expect(kernel.chamfer(shape, { distance: 1, angle: 120 })).rejects.toThrow(/between 0/)
@@ -538,16 +547,31 @@ describe('StubKernel detail operations', () => {
     expect(volumeOf(mesh)).toBeCloseTo(1000 - 512, 1)
   })
 
-  it('opens the requested face of a shell', async () => {
+  it('opens the face the caller actually named', async () => {
+    const kernel = new StubKernel()
+    const shape = await kernel.createBox({ width: 10, height: 10, depth: 10 })
+    const { faceIds } = await kernel.topology(shape)
+
+    const closed = await kernel.triangulate(await kernel.shell(shape, { thickness: 1 }))
+    // Every face of a cube is the same size, so opening any one of them removes
+    // the same wall — which is what makes this a check on identity, not on luck.
+    for (const faceId of faceIds) {
+      const opened = await kernel.triangulate(
+        await kernel.shell(shape, { thickness: 1, openFaceIds: [faceId] }),
+      )
+      expect(volumeOf(opened)).toBeLessThan(volumeOf(closed))
+    }
+  })
+
+  it('refuses to open a face the solid has not got', async () => {
     const kernel = new StubKernel()
     const shape = await kernel.createBox({ width: 10, height: 10, depth: 10 })
 
-    const closed = await kernel.triangulate(await kernel.shell(shape, { thickness: 1 }))
-    const opened = await kernel.triangulate(
-      await kernel.shell(shape, { thickness: 1, openFaceIds: ['top'] }),
-    )
-
-    expect(volumeOf(opened)).toBeLessThan(volumeOf(closed))
+    // Silently opening some other face — which is what naming the +Z one
+    // regardless used to do — puts the cavity somewhere nobody asked for.
+    await expect(
+      kernel.shell(shape, { thickness: 1, openFaceIds: ['top'] }),
+    ).rejects.toThrow(/do not belong|does not belong|belong to the solid/)
   })
 
   it.each([
@@ -625,6 +649,35 @@ describe('StubKernel detail operations', () => {
     // The neutral plane sits at the base, so the top grows and the base does not.
     expect(extentAlong(mesh, 2)).toEqual({ min: -5, max: 5 })
     expect(volumeOf(mesh)).toBeGreaterThan(1000)
+  })
+
+  it('leaves the faces a draft did not name where they were', async () => {
+    const kernel = new StubKernel()
+    const shape = await kernel.createBox({ width: 10, height: 10, depth: 10 })
+    // The +X wall, picked out of the same derivation that hands the ids out.
+    const wall = meshTopology(await kernel.triangulate(shape)).faces.find(
+      (face) => face.normal.x > 0.9,
+    )
+    expect(wall).toBeDefined()
+
+    const mesh = await kernel.triangulate(
+      await kernel.draft(shape, { angle: 10, faceIds: [(wall as TopologyFace).id] }),
+    )
+
+    // Only the named wall leans out; the opposite one stays on its own plane.
+    expect(extentAlong(mesh, 0).max).toBeGreaterThan(5)
+    expect(extentAlong(mesh, 0).min).toBeCloseTo(-5, 6)
+  })
+
+  it('refuses a draft whose faces are no longer part of the solid', async () => {
+    const kernel = new StubKernel()
+    const shape = await kernel.createBox({ width: 10, height: 10, depth: 10 })
+
+    // Tapering the whole box instead would report a draft of the one face the
+    // caller asked for, which is not what happened.
+    await expect(kernel.draft(shape, { angle: 10, faceIds: ['face-stale'] })).rejects.toThrow(
+      /face-stale/,
+    )
   })
 
   it.each([

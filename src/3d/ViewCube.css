@@ -1,0 +1,76 @@
+.viewcube {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  /* The scene keeps the pointer except where the widget actually is. */
+  pointer-events: none;
+}
+
+.viewcube__svg {
+  width: 5.5rem;
+  height: 5.5rem;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.viewcube__face polygon {
+  fill: rgba(38, 44, 51, 0.9);
+  stroke: #5b6572;
+  stroke-width: 0.02;
+}
+
+.viewcube__face text {
+  font-size: 0.22px;
+  fill: #c9d1d9;
+  user-select: none;
+}
+
+.viewcube__face--active polygon {
+  fill: rgba(78, 201, 176, 0.28);
+  stroke: #4ec9b0;
+}
+
+.viewcube__face:hover polygon {
+  fill: rgba(242, 193, 78, 0.3);
+  stroke: #f2c14e;
+}
+
+.viewcube__hotspot {
+  fill: rgba(201, 209, 217, 0.16);
+}
+
+.viewcube__hotspot:hover {
+  fill: rgba(242, 193, 78, 0.6);
+}
+
+.viewcube__views {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.15rem;
+  pointer-events: auto;
+}
+
+.viewcube__view {
+  padding: 0.15rem 0.4rem;
+  border: 1px solid #39414b;
+  border-radius: 3px;
+  background: rgba(26, 29, 33, 0.85);
+  font: inherit;
+  font-size: 0.65rem;
+  color: var(--text-muted, #8b949e);
+  cursor: pointer;
+}
+
+.viewcube__view:hover {
+  color: #c9d1d9;
+  border-color: #5b6572;
+}
+
+.viewcube__view[aria-pressed='true'] {
+  color: #4ec9b0;
+  border-color: #4ec9b0;
+}

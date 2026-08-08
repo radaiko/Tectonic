@@ -115,3 +115,19 @@ export {
   zoomViewport,
 } from './ViewportState'
 export type { MultiViewportState, ViewportConfig } from './ViewportState'
+
+export {
+  EMPTY_SELECTION,
+  SELECTION_KINDS,
+  applyPick,
+  describeSelection,
+  describeSelectionCount,
+  removeSelection,
+  sameSelection,
+  selectionIds,
+  selectionIncludes,
+  selectionKey,
+  selectionOfKind,
+  toggleSelection,
+} from './selection'
+export type { SelectionItem, SelectionKind, SelectionNames } from './selection'

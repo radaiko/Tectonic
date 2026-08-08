@@ -15,3 +15,5 @@ export {
 } from './planarFaces'
 export type { FaceReference, PlanarFaceGroup, PlanarFaceOption } from './planarFaces'
 export { createStarterDocument } from './starterDocument'
+export { useKernel } from './useKernel'
+export type { KernelSession, KernelStatus } from './useKernel'

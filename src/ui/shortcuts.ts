@@ -32,8 +32,6 @@ export const SHORTCUT_SECTIONS: readonly ShortcutSection[] = [
       { keys: ['Ctrl', 'N'], action: 'New document' },
       { keys: ['Ctrl', 'O'], action: 'Open file' },
       { keys: ['Ctrl', 'S'], action: 'Save / export' },
-      { keys: ['Ctrl', 'Z'], action: 'Undo' },
-      { keys: ['Ctrl', 'Shift', 'Z'], action: 'Redo' },
       { keys: ['Esc'], action: 'Cancel the current tool' },
       { keys: ['Del'], action: 'Delete the selection' },
       { keys: ['Ctrl', 'Shift', 'D'], action: 'Toggle developer overlay' },
@@ -44,6 +42,8 @@ export const SHORTCUT_SECTIONS: readonly ShortcutSection[] = [
     title: 'Sketch tools',
     scope: 'While the sketch surface is active',
     bindings: [
+      { keys: ['Ctrl', 'Z'], action: 'Undo the last drawing step' },
+      { keys: ['Ctrl', 'Shift', 'Z'], action: 'Redo the last drawing step' },
       { keys: ['V'], action: 'Select tool' },
       { keys: ['L'], action: 'Line tool' },
       { keys: ['C'], action: 'Circle tool' },
@@ -60,6 +60,9 @@ export const SHORTCUT_SECTIONS: readonly ShortcutSection[] = [
     title: '3D view',
     scope: 'While the 3D surface is active',
     bindings: [
+      { keys: ['Ctrl', 'Z'], action: 'Undo the last document change' },
+      { keys: ['Ctrl', 'Shift', 'Z'], action: 'Redo the last document change' },
+      { keys: ['Ctrl', 'Y'], action: 'Redo the last document change' },
       { keys: ['Left drag'], action: 'Orbit' },
       { keys: ['Middle drag'], action: 'Pan' },
       { keys: ['Scroll'], action: 'Zoom' },

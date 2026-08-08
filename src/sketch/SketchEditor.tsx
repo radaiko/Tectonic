@@ -69,7 +69,20 @@ interface DimensionEdit {
   readonly y: number
 }
 
-const NO_DIAGNOSTICS: Diagnostics = { dof: 0, errors: [], underConstrainedEntityIds: [] }
+/** Solves the sketch and packages the solver's report for the status bar. */
+function solveDiagnostics(solver: ConstraintSolver, model: SketchModel): Diagnostics {
+  const result = solver.solve(model)
+  return {
+    dof: result.dof,
+    errors: result.errors,
+    underConstrainedEntityIds: result.underConstrainedEntityIds,
+  }
+}
+
+/** True when two id lists hold the same ids in the same order. */
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index])
+}
 
 /**
  * The 2D sketching surface: canvas, tool palette, property and constraint
@@ -102,7 +115,11 @@ export function SketchEditor({
   const [cursor, setCursor] = useState<Vec2>({ x: 0, y: 0 })
   const [snap, setSnap] = useState<SnapCandidate | null>(null)
   const [editing, setEditing] = useState<DimensionEdit | null>(null)
-  const [diagnostics, setDiagnostics] = useState<Diagnostics>(NO_DIAGNOSTICS)
+  /**
+   * Mirror of the tool-owned selection set. The set itself has to stay mutable
+   * for the tools, so render reads this copy instead of the ref.
+   */
+  const [selectionIds, setSelectionIds] = useState<readonly string[]>([])
 
   const solver = useMemo(() => new ConstraintSolver(), [])
   const history = useMemo(() => new SketchHistory(model), [model])
@@ -119,8 +136,12 @@ export function SketchEditor({
     [onToolChange],
   )
 
-  const context = useMemo<ToolContext>(
-    () => ({
+  /**
+   * Built per interaction rather than memoised: the live selection set lives in
+   * a ref, which only handlers and effects may read.
+   */
+  const toolContext = useCallback(
+    (): ToolContext => ({
       model,
       solver,
       snap: new SnapSystem({ tolerance: SNAP_PIXELS / view.scale }),
@@ -131,19 +152,29 @@ export function SketchEditor({
     [model, settings, solver, view.scale],
   )
 
+  // The sketch is mutable and solved in place, so the solve is pinned to model
+  // identity: once on mount, then again whenever a different sketch arrives.
+  // Deriving it here rather than in an effect avoids a cascading render.
+  const [solved, setSolved] = useState<{ model: SketchModel; diagnostics: Diagnostics }>(() => ({
+    model,
+    diagnostics: solveDiagnostics(solver, model),
+  }))
+  if (solved.model !== model) {
+    setSolved({ model, diagnostics: solveDiagnostics(solver, model) })
+  }
+  const diagnostics = solved.diagnostics
+
   const runSolve = useCallback(() => {
-    const result = solver.solve(model)
-    setDiagnostics({
-      dof: result.dof,
-      errors: result.errors,
-      underConstrainedEntityIds: result.underConstrainedEntityIds,
-    })
-    return result
+    setSolved({ model, diagnostics: solveDiagnostics(solver, model) })
   }, [model, solver])
 
-  useEffect(() => {
-    runSolve()
-  }, [runSolve])
+  /** Copies the tool-owned selection set into state for the panels to read. */
+  const syncSelection = useCallback(() => {
+    setSelectionIds((current) => {
+      const next = [...selectionRef.current]
+      return sameIds(current, next) ? current : next
+    })
+  }, [])
 
   /** Folds a tool's answer back into the editor: status, solve, history, redraw. */
   const applyResult = useCallback(
@@ -156,9 +187,10 @@ export function SketchEditor({
         if (record) history.commit()
         onChange?.()
       }
+      syncSelection()
       redraw()
     },
-    [history, onChange, runSolve],
+    [history, onChange, runSolve, syncSelection],
   )
 
   /* ---------------------------------------------------------------------- */
@@ -275,7 +307,7 @@ export function SketchEditor({
     }
 
     setEditing(null)
-    applyResult(tool.onPointerDown(sketchEvent(event, screen), context), true)
+    applyResult(tool.onPointerDown(sketchEvent(event, screen), toolContext()), true)
   }
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
@@ -289,6 +321,7 @@ export function SketchEditor({
     }
 
     const world = screenToWorld(view, screen)
+    const context = toolContext()
     setCursor(world)
     setSnap(context.snap.findSnap(world, model))
     applyResult(tool.onPointerMove(sketchEvent(event, screen), context), false)
@@ -300,7 +333,7 @@ export function SketchEditor({
       return
     }
     const screen = localPoint(event.clientX, event.clientY)
-    applyResult(tool.onPointerUp(sketchEvent(event, screen), context), true)
+    applyResult(tool.onPointerUp(sketchEvent(event, screen), toolContext()), true)
   }
 
   const handleWheel = (event: React.WheelEvent<HTMLCanvasElement>): void => {
@@ -319,11 +352,12 @@ export function SketchEditor({
       return
     }
     selectionRef.current.clear()
+    syncSelection()
     runSolve()
     onChange?.()
     setStatus('Undo')
     redraw()
-  }, [history, onChange, runSolve])
+  }, [history, onChange, runSolve, syncSelection])
 
   const redo = useCallback(() => {
     if (!history.redo()) {
@@ -332,11 +366,12 @@ export function SketchEditor({
       return
     }
     selectionRef.current.clear()
+    syncSelection()
     runSolve()
     onChange?.()
     setStatus('Redo')
     redraw()
-  }, [history, onChange, runSolve])
+  }, [history, onChange, runSolve, syncSelection])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -370,12 +405,12 @@ export function SketchEditor({
       }
 
       if (event.key === 'Escape') setEditing(null)
-      applyResult(tool.onKeyDown(event.key, context), true)
+      applyResult(tool.onKeyDown(event.key, toolContext()), true)
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [active, applyResult, context, redo, selectTool, tool, undo])
+  }, [active, applyResult, redo, selectTool, tool, toolContext, undo])
 
   /* ---------------------------------------------------------------------- */
   /* Dimensions and constraints                                              */
@@ -428,7 +463,7 @@ export function SketchEditor({
 
   /* ---------------------------------------------------------------------- */
 
-  const selectedIds = [...selectionRef.current].filter((id) => model.entities.has(id))
+  const selectedIds = selectionIds.filter((id) => model.entities.has(id))
   const selectedEntity = selectedIds.length > 0 ? model.getEntity(selectedIds[0] as string) : undefined
   const description = selectedEntity ? describeEntity(model, selectedEntity) : null
   const constraints = [...model.constraints.values()]

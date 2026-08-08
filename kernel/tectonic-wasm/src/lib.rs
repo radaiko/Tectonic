@@ -155,6 +155,23 @@ pub fn topology(body: &str) -> Result<String, JsValue> {
     api::topology(body).map_err(throw)
 }
 
+/// Where each face sits — centroid, area, normal and surface kind — under the
+/// same ids [`topology`] reports.
+///
+/// This is what lets the host match a viewport pick, which can only name a face
+/// by its triangles, to the B-Rep face the dress-up operations take.
+#[wasm_bindgen(js_name = faceInfo)]
+pub fn face_info(body: &str) -> Result<String, JsValue> {
+    api::face_info(body).map_err(throw)
+}
+
+/// The same for edges: midpoint, length and curve kind, under [`topology`]'s
+/// edge ids.
+#[wasm_bindgen(js_name = edgeInfo)]
+pub fn edge_info(body: &str) -> Result<String, JsValue> {
+    api::edge_info(body).map_err(throw)
+}
+
 /// Whether the body bounds a volume rather than being a loose shell.
 #[wasm_bindgen(js_name = isSolid)]
 pub fn is_solid(body: &str) -> Result<bool, JsValue> {

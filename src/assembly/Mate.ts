@@ -216,6 +216,11 @@ export class Mate {
     return this.parameters
   }
 
+  /** Pins the mate at where it currently stands, so solving leaves it alone. */
+  setLocked(locked: boolean): void {
+    this.isLocked = locked
+  }
+
   toJSON(): MateJSON {
     return {
       id: this.id,

@@ -20,6 +20,13 @@ export interface FeatureEvaluation {
   readonly bodies: readonly Body[]
   /** The bodies each feature was responsible for, keyed by feature id. */
   readonly bodiesByFeature: ReadonlyMap<string, readonly Body[]>
+  /**
+   * The feature that last wrote to each body, keyed by body id — the same fact
+   * as `bodiesByFeature` read the other way round. This is what a new feature
+   * consults to work out what it is being built on: naming a body it will modify
+   * is naming the feature that produced that body.
+   */
+  readonly ownerByBody: ReadonlyMap<string, string>
   readonly outcomes: readonly FeatureOutcome[]
   /** Features that failed, in tree order. Empty when the rebuild was clean. */
   readonly failures: readonly FeatureOutcome[]
@@ -63,8 +70,22 @@ export class FeatureEngine {
     const solids: Solid[] = []
     const outcomes: FeatureOutcome[] = []
     let nextSolid = 0
+    /** Features that failed, so what is built on them can say why it did not run. */
+    const broken = new Map<string, string>()
 
     for (const feature of tree.getActiveFeatures()) {
+      // A feature whose input never got built cannot be judged on its own terms:
+      // running it anyway produces a second, misleading failure ("there is no
+      // solid for this to modify") that says nothing about the real cause. Naming
+      // the feature that actually broke is what makes the tree readable.
+      const blocking = feature.parentFeatureIds.filter((parentId) => broken.has(parentId))
+      if (blocking.length > 0) {
+        const names = blocking.map((parentId) => tree.getFeature(parentId)?.name ?? parentId)
+        feature.markError(`Waiting on ${names.join(', ')}, which did not build`)
+        broken.set(feature.id, feature.name)
+        continue
+      }
+
       const context: OperationContext = {
         kernel: this.#kernel,
         feature,
@@ -77,6 +98,7 @@ export class FeatureEngine {
         await featureOperation(feature.featureType)(context)
       } catch (cause) {
         feature.markError((cause as Error).message)
+        broken.set(feature.id, feature.name)
       }
     }
 
@@ -90,6 +112,7 @@ export class FeatureEngine {
     return {
       bodies,
       bodiesByFeature,
+      ownerByBody: new Map(solids.map((solid) => [solid.id, solid.featureId])),
       outcomes,
       failures: outcomes.filter((outcome) => outcome.error !== null),
     }

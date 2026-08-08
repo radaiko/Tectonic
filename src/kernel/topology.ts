@@ -33,6 +33,10 @@ export interface TopologyFace {
   readonly triangles: readonly number[]
   /** Welded vertex ids the face is built from. */
   readonly vertexIds: readonly string[]
+  /** Total area of the face's triangles. */
+  readonly area: number
+  /** Area-weighted centre of the face, in world space. */
+  readonly centroid: Vec3
 }
 
 export interface TopologyEdge {
@@ -146,6 +150,8 @@ interface FaceGroup {
   readonly vertices: Set<number>
   /** Running triangle-area total, so the plane is a weighted average. */
   weight: number
+  /** Area-weighted sum of the triangle centroids; divided by `weight` at the end. */
+  moment: Vec3
 }
 
 function groupFaces(mesh: MeshData, welds: Welds): TopologyFace[] {
@@ -181,6 +187,7 @@ function groupFaces(mesh: MeshData, welds: Welds): TopologyFace[] {
       )
       group.offset = (group.offset * group.weight + offset * area) / total
       group.weight = total
+      group.moment = add(group.moment, scale(centroidOf(a, b, c), area))
       group.triangles.push(start)
       for (let corner = 0; corner < 3; corner += 1) {
         group.vertices.add(welds.weldOf[mesh.indices[start + corner] as number] as number)
@@ -194,6 +201,7 @@ function groupFaces(mesh: MeshData, welds: Welds): TopologyFace[] {
       triangles: [start],
       vertices: new Set<number>(),
       weight: area,
+      moment: scale(centroidOf(a, b, c), area),
     }
     for (let corner = 0; corner < 3; corner += 1) {
       created.vertices.add(welds.weldOf[mesh.indices[start + corner] as number] as number)
@@ -213,7 +221,16 @@ function groupFaces(mesh: MeshData, welds: Welds): TopologyFace[] {
     vertexIds: [...group.vertices]
       .sort((a, b) => a - b)
       .map((weld) => (welds.vertices[weld] as TopologyVertex).id),
+    area: group.weight,
+    // Area-weighted, so a face triangulated into one big and many small
+    // triangles still reports its middle rather than the fan's hub.
+    centroid: group.weight > 0 ? scale(group.moment, 1 / group.weight) : group.normal,
   }))
+}
+
+/** Centre of a triangle — the average of its corners. */
+function centroidOf(a: Vec3, b: Vec3, c: Vec3): Vec3 {
+  return { x: (a.x + b.x + c.x) / 3, y: (a.y + b.y + c.y) / 3, z: (a.z + b.z + c.z) / 3 }
 }
 
 function collectEdges(mesh: MeshData, welds: Welds, faces: readonly TopologyFace[]): TopologyEdge[] {

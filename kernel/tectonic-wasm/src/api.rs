@@ -14,7 +14,7 @@ use tectonic_kernel::ops::{
     self, ChamferParams, ExtrudeParams, FilletParams, LoftParams, RevolveParams, ShellParams,
     SweepParams,
 };
-use tectonic_kernel::{Body, KernelError, KernelResult};
+use tectonic_kernel::{Body, KernelError, KernelResult, Vec3};
 
 /// How close two vertices of an adopted mesh have to be to become one, in
 /// millimetres. A triangle soup arrives with each triangle's corners duplicated;
@@ -140,6 +140,61 @@ pub fn topology(body: &str) -> KernelResult<String> {
     encode(&decode_body(body, OPERATION)?.topology_ids(), OPERATION)
 }
 
+/// Where each face sits and what surface it lies on, under the ids
+/// [`topology`] reports.
+///
+/// This is what lets the host pair its own vocabulary with the kernel's. A
+/// viewport pick can only name a face by its triangles, while [`fillet`],
+/// [`chamfer`] and [`shell`] take the geometry-hashed ids from [`topology`];
+/// the two describe the same solid and share no identifiers. Reporting each
+/// B-Rep face's centroid, normal and area gives the host something both sides
+/// can be matched on, so a selection made in the viewport reaches the exact
+/// B-Rep operation instead of a tessellated approximation of it.
+pub fn face_info(body: &str) -> KernelResult<String> {
+    const OPERATION: &str = "faceInfo";
+    let body = decode_body(body, OPERATION)?;
+    let ids = body.topology_ids().face_ids;
+    let infos: Vec<FaceInfo> = body
+        .faces
+        .iter()
+        .zip(&ids)
+        .map(|(face, id)| FaceInfo {
+            id: id.clone(),
+            centroid: face.centroid(&body.vertices),
+            area: face.area(&body.vertices),
+            normal: face.normal,
+            kind: face.surface.name(),
+        })
+        .collect();
+    encode(&infos, OPERATION)
+}
+
+/// The same for edges: where each one runs, under [`topology`]'s edge ids.
+///
+/// The midpoint is the curve's own, so an arc reports the point on the arc
+/// rather than the middle of its chord.
+pub fn edge_info(body: &str) -> KernelResult<String> {
+    const OPERATION: &str = "edgeInfo";
+    let body = decode_body(body, OPERATION)?;
+    let ids = body.topology_ids().edge_ids;
+    let infos: Vec<EdgeInfo> = body
+        .edges
+        .iter()
+        .zip(&ids)
+        .map(|(edge, id)| {
+            let start = body.position(edge.start());
+            let end = body.position(edge.end());
+            EdgeInfo {
+                id: id.clone(),
+                midpoint: edge.midpoint(start, end),
+                length: edge.length(start, end),
+                kind: edge.curve.name(),
+            }
+        })
+        .collect();
+    encode(&infos, OPERATION)
+}
+
 pub fn is_solid(body: &str) -> KernelResult<bool> {
     Ok(decode_body(body, "isSolid")?.is_solid())
 }
@@ -193,6 +248,27 @@ impl Quality {
             max_edge_length: self.max_edge_length,
         }
     }
+}
+
+/// One face's geometry, in the shape the host's `FaceInfo` expects.
+#[derive(Debug, Serialize)]
+struct FaceInfo {
+    id: String,
+    centroid: Vec3,
+    area: f64,
+    normal: Vec3,
+    /// "plane", "cylinder", "sphere", "cone", "torus" or "nurbs".
+    kind: &'static str,
+}
+
+/// One edge's geometry, in the shape the host's `EdgeInfo` expects.
+#[derive(Debug, Serialize)]
+struct EdgeInfo {
+    id: String,
+    midpoint: Vec3,
+    length: f64,
+    /// "line", "arc", "circle" or "spline".
+    kind: &'static str,
 }
 
 /// A mesh as the host holds it: three parallel arrays rather than the kernel's
@@ -336,6 +412,86 @@ mod tests {
             square(4.0)
         );
         assert!((volume_of(&loft(&params).unwrap()) - 160.0).abs() < 1e-6);
+    }
+
+    /// The geometry reports line up with `topology`, index for index — that
+    /// correspondence is the whole reason the host can pair its own face names
+    /// with the kernel's.
+    #[test]
+    fn face_and_edge_info_carry_the_ids_topology_reports() {
+        let body = box_body(10.0, 5.0);
+        let ids = json(&topology(&body).unwrap());
+        let faces = json(&face_info(&body).unwrap());
+        let edges = json(&edge_info(&body).unwrap());
+
+        assert_eq!(
+            faces.as_array().unwrap().len(),
+            ids["faceIds"].as_array().unwrap().len()
+        );
+        assert_eq!(
+            edges.as_array().unwrap().len(),
+            ids["edgeIds"].as_array().unwrap().len()
+        );
+        for (index, id) in ids["faceIds"].as_array().unwrap().iter().enumerate() {
+            assert_eq!(&faces[index]["id"], id);
+        }
+        for (index, id) in ids["edgeIds"].as_array().unwrap().iter().enumerate() {
+            assert_eq!(&edges[index]["id"], id);
+        }
+    }
+
+    /// A 10×10×5 box: six planar faces, two of them 100mm² caps facing ±Z, and
+    /// twelve edges whose lengths are the box's own.
+    #[test]
+    fn face_info_measures_each_face() {
+        let faces = json(&face_info(&box_body(10.0, 5.0)).unwrap());
+        let faces = faces.as_array().unwrap();
+
+        assert_eq!(faces.len(), 6);
+        assert!(faces.iter().all(|face| face["kind"] == "plane"));
+
+        let area = |z: f64| {
+            faces
+                .iter()
+                .filter(|face| (face["normal"]["z"].as_f64().unwrap() - z).abs() < 1e-9)
+                .map(|face| face["area"].as_f64().unwrap())
+                .sum::<f64>()
+        };
+        assert!((area(1.0) - 100.0).abs() < 1e-6);
+        assert!((area(-1.0) - 100.0).abs() < 1e-6);
+
+        // Every centroid sits inside the box it came from.
+        for face in faces {
+            let z = face["centroid"]["z"].as_f64().unwrap();
+            assert!((-1e-9..=5.0 + 1e-9).contains(&z), "centroid z out of range: {z}");
+        }
+    }
+
+    #[test]
+    fn edge_info_measures_each_edge() {
+        let edges = json(&edge_info(&box_body(10.0, 5.0)).unwrap());
+        let edges = edges.as_array().unwrap();
+
+        assert_eq!(edges.len(), 12);
+        assert!(edges.iter().all(|edge| edge["kind"] == "line"));
+
+        let count = |length: f64| {
+            edges
+                .iter()
+                .filter(|edge| (edge["length"].as_f64().unwrap() - length).abs() < 1e-6)
+                .count()
+        };
+        assert_eq!(count(10.0), 8, "eight edges run around the 10mm square");
+        assert_eq!(count(5.0), 4, "four verticals run the 5mm height");
+    }
+
+    /// Both reports survive a body that arrived stripped of its derived edge
+    /// structure, which is how every body crosses the boundary.
+    #[test]
+    fn edge_info_works_on_a_body_without_derived_structure() {
+        let body = box_body(10.0, 5.0);
+        assert!(json(&body)["edges"].as_array().unwrap().is_empty());
+        assert_eq!(json(&edge_info(&body).unwrap()).as_array().unwrap().len(), 12);
     }
 
     #[test]

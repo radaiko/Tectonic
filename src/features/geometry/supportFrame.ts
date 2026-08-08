@@ -1,10 +1,10 @@
-import type { IKernel, PlaneFrame, ShapeHandle, Vec3 } from '../../kernel/IKernel'
-import { isBRepKernel } from '../../kernel/IKernel'
-import { meshTopology } from '../../kernel/topology'
+import type { IKernel, PlaneFrame, ShapeHandle } from '../../kernel/IKernel'
+import type { FaceReference, ReferenceResolution } from '../../kernel/references'
+import { isResolved, resolveFace, surveyFaces } from '../../kernel/references'
 import type { SketchSupport } from '../../sketch/domain/SketchSupport'
 import { isOriginPlaneSupport } from '../../sketch/domain/SketchSupport'
 import { frameFromNormal } from './ReferenceGeometry'
-import { addVec3, offsetFrame, planeFrame, scaleVec3 } from './plane'
+import { offsetFrame, planeFrame } from './plane'
 
 /**
  * Turning a sketch support into a world-space plane.
@@ -43,7 +43,35 @@ export async function resolveSupportFrame(
   support: SketchSupport,
   context: SupportContext,
 ): Promise<PlaneFrame> {
-  if (isOriginPlaneSupport(support)) return planeFrame(support.plane, support.offset)
+  return offsetFrame((await resolveSupport(support, context)).frame, support.offset)
+}
+
+/** A resolved support: where it sits, and how confidently it was identified. */
+export interface ResolvedSupport {
+  readonly frame: PlaneFrame
+  /**
+   * How the face was found again. `exact` and `unverified` mean the identifier
+   * still named a face; `matched` means the identifier had moved on and the face
+   * was recognised by its geometry instead. Null for an origin plane, which is
+   * arithmetic and cannot be lost.
+   */
+  readonly resolution: ReferenceResolution | null
+}
+
+/**
+ * The support's placement, together with how it was arrived at.
+ *
+ * Splitting this out from {@link resolveSupportFrame} is what lets the UI say
+ * "this sketch followed its face through the edit" rather than leaving a
+ * recovered reference indistinguishable from one that never moved.
+ */
+export async function resolveSupport(
+  support: SketchSupport,
+  context: SupportContext,
+): Promise<ResolvedSupport> {
+  if (isOriginPlaneSupport(support)) {
+    return { frame: planeFrame(support.plane, support.offset), resolution: null }
+  }
 
   const shape = context.shapeOf(support.bodyId)
   if (!shape) {
@@ -52,52 +80,33 @@ export async function resolveSupportFrame(
     )
   }
 
-  const face = await facePlane(context.kernel, shape, support.faceId)
+  const survey = await surveyFaces(context.kernel, shape)
+  const reference: FaceReference = support.fingerprint
+    ? { id: support.faceId, fingerprint: support.fingerprint }
+    : { id: support.faceId }
+  const resolution = resolveFace(survey, reference)
+
+  if (!isResolved(resolution)) {
+    // Deliberately not "use whatever now carries that id" and not "use the
+    // nearest face": either would move the sketch somewhere nobody chose and
+    // say nothing about it. A reference that cannot be pinned down is a
+    // dependency error, and the user is the one who gets to resolve it.
+    throw new SupportResolutionError(
+      `${resolution.reason}. Reattach this sketch to the face you want.`,
+    )
+  }
+
+  const face = survey.find((candidate) => candidate.id === resolution.id)
   if (!face) {
     throw new SupportResolutionError(
       `Face ${support.faceId} is no longer part of ${support.bodyId}`,
     )
   }
-  return offsetFrame(face, support.offset)
-}
-
-/**
- * The plane of one named face.
- *
- * A B-Rep backend is asked directly. A tessellation backend has no faces to
- * ask, so the same derivation the kernel itself uses to hand out face ids is
- * run over its triangles — which keeps the ids on both sides of this call
- * meaning the same thing.
- */
-async function facePlane(
-  kernel: IKernel,
-  shape: ShapeHandle,
-  faceId: string,
-): Promise<PlaneFrame | null> {
-  if (isBRepKernel(kernel)) {
-    const info = (await kernel.faceInfo(shape)).find((entry) => entry.id === faceId)
-    if (!info) return null
-    if (info.kind !== 'plane') {
-      throw new SupportResolutionError(`Face ${faceId} is not planar, so no sketch can sit on it`)
-    }
-    return frameFromNormal(info.centroid, info.normal)
+  if (face.kind !== undefined && face.kind !== 'plane') {
+    throw new SupportResolutionError(
+      `Face ${face.id} is not planar, so no sketch can sit on it`,
+    )
   }
 
-  const derived = meshTopology(await kernel.triangulate(shape))
-  const face = derived.faces.find((entry) => entry.id === faceId)
-  if (!face) return null
-
-  // Anchored on the middle of the face, matching what the B-Rep path reports,
-  // so the sketch origin lands in the same place whichever backend is loaded.
-  const positions = new Map(derived.vertices.map((vertex) => [vertex.id, vertex.position]))
-  let center: Vec3 = { x: 0, y: 0, z: 0 }
-  let counted = 0
-  for (const vertexId of face.vertexIds) {
-    const position = positions.get(vertexId)
-    if (!position) continue
-    center = addVec3(center, position)
-    counted += 1
-  }
-  const origin = counted === 0 ? scaleVec3(face.normal, face.offset) : scaleVec3(center, 1 / counted)
-  return frameFromNormal(origin, face.normal)
+  return { frame: frameFromNormal(face.centroid, face.normal), resolution }
 }

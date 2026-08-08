@@ -20,6 +20,20 @@ export function CommandPalette({
   onClose,
   commands,
 }: CommandPaletteProps): React.ReactElement | null {
+  // The search lives in the panel, which exists only while the palette is open.
+  //
+  // Every opening has to start from a clean search — reopening filtered by
+  // whatever was typed last time is not what the chord promises — and mounting
+  // the state with the panel is what makes that true without an effect reaching
+  // back to reset it on the way in.
+  if (!open) return null
+  return <CommandPalettePanel commands={commands} onClose={onClose} />
+}
+
+function CommandPalettePanel({
+  commands,
+  onClose,
+}: Omit<CommandPaletteProps, 'open'>): React.ReactElement {
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
@@ -29,14 +43,10 @@ export function CommandPalette({
   // A shrinking result list must not leave the highlight past its end.
   const selected = matches.length === 0 ? -1 : Math.min(activeIndex, matches.length - 1)
 
-  // Every opening starts from a clean search, otherwise the palette reopens
-  // filtered by whatever was typed last time.
+  // Typing should land in the search without the user having to click into it.
   useEffect(() => {
-    if (!open) return
-    setQuery('')
-    setActiveIndex(0)
     inputRef.current?.focus()
-  }, [open])
+  }, [])
 
   // Keyboard navigation can outrun the visible window on a long list.
   useEffect(() => {
@@ -52,8 +62,6 @@ export function CommandPalette({
     },
     [onClose],
   )
-
-  if (!open) return null
 
   const handleKeyDown = (event: React.KeyboardEvent): void => {
     if (event.key === 'Escape') {

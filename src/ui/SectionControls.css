@@ -1,0 +1,53 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.section__title {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.section__mode {
+  width: 100%;
+  padding: 0.2rem 0.3rem;
+  border: 1px solid #39414b;
+  border-radius: 3px;
+  background: #14171a;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+}
+
+.section__axis {
+  display: grid;
+  grid-template-columns: 1rem 1fr 1.4rem;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.section__axis input[type='range'] {
+  width: 100%;
+}
+
+.section__flip {
+  border: 1px solid #39414b;
+  border-radius: 3px;
+  background: none;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.section__flip[aria-pressed='true'] {
+  color: #4ec9b0;
+  border-color: #4ec9b0;
+}

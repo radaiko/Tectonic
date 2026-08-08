@@ -36,9 +36,24 @@ export function boundingBox(body: string): string;
 export function chamfer(body: string, params: string): string;
 
 /**
+ * The same for edges: midpoint, length and curve kind, under [`topology`]'s
+ * edge ids.
+ */
+export function edgeInfo(body: string): string;
+
+/**
  * Sweeps a profile along a straight line into a solid.
  */
 export function extrude(params: string): string;
+
+/**
+ * Where each face sits — centroid, area, normal and surface kind — under the
+ * same ids [`topology`] reports.
+ *
+ * This is what lets the host match a viewport pick, which can only name a face
+ * by its triangles, to the B-Rep face the dress-up operations take.
+ */
+export function faceInfo(body: string): string;
 
 /**
  * Rounds the named edges, or every edge when none are named.
@@ -113,7 +128,9 @@ export interface InitOutput {
     readonly booleanUnion: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly boundingBox: (a: number, b: number) => [number, number, number, number];
     readonly chamfer: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly edgeInfo: (a: number, b: number) => [number, number, number, number];
     readonly extrude: (a: number, b: number) => [number, number, number, number];
+    readonly faceInfo: (a: number, b: number) => [number, number, number, number];
     readonly fillet: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly isSolid: (a: number, b: number) => [number, number, number];
     readonly loft: (a: number, b: number) => [number, number, number, number];

@@ -5,7 +5,9 @@ import type {
   ChamferParams,
   DeleteFaceParams,
   DraftParams,
+  EdgeInfo,
   ExtrudeParams,
+  FaceInfo,
   FilletParams,
   HoleParams,
   IKernel,
@@ -23,12 +25,55 @@ import type {
   Topology,
   TransformParams,
 } from './IKernel'
-import { KernelError } from './IKernel'
+import type { KernelCapability } from './IKernel'
+import { KERNEL_CAPABILITIES, KernelError } from './IKernel'
+import {
+  surveyEdgeInfo,
+  surveyFaceInfo,
+  surveyMeshEdges,
+  surveyMeshFaces,
+} from './references'
 import type { RustLoadOptions, RustWasmExports } from './rust/RustWasm'
 import { loadRustKernel, rustError } from './rust/RustWasm'
 import { StubKernel } from './StubKernel'
+import type { TranslatedIds } from './vocabulary'
+import { translateEdgeIds, translateFaceIds } from './vocabulary'
 
 const DEG = Math.PI / 180
+
+/**
+ * The kernel's own tessellation defaults, restated on this side.
+ *
+ * The interface lets a caller ask for one tolerance and leave the rest to the
+ * kernel's judgement, but the quality struct that crosses the boundary is a
+ * complete triple. Filling the gaps here rather than relying on the far side's
+ * serde defaults is what keeps a partial request working against a `pkg/` built
+ * before those defaults existed — the deserializer accepts a whole object from
+ * any build of the kernel, a partial one only from a recent enough one.
+ */
+interface KernelQuality {
+  readonly linearDeflection: number
+  readonly angularDeflection: number
+  readonly maxEdgeLength: number
+}
+
+const KERNEL_TESSELLATION: KernelQuality = {
+  /** Greatest distance between a facet and the surface it stands in for, in mm. */
+  linearDeflection: 0.1,
+  /** Greatest angle between the normals at a facet's corners, in radians. */
+  angularDeflection: 0.5,
+  /** Upper bound on a triangle edge. Zero leaves it unbounded. */
+  maxEdgeLength: 0,
+}
+
+/** A tessellation request as the kernel wants it: every field present. */
+function quality(params: TessellationParams): KernelQuality {
+  return {
+    linearDeflection: params.linearDeflection ?? KERNEL_TESSELLATION.linearDeflection,
+    angularDeflection: params.angularDeflection ?? KERNEL_TESSELLATION.angularDeflection,
+    maxEdgeLength: KERNEL_TESSELLATION.maxEdgeLength,
+  }
+}
 
 /**
  * What the kernel holds for one shape.
@@ -63,6 +108,13 @@ interface Shape {
  */
 export class RustKernel implements IKernel {
   readonly name = 'tectonic-rust'
+
+  /**
+   * Everything the interface names. Fillet, chamfer and shell are the kernel's
+   * own B-Rep operations; the rest are carried out on a tessellation of the body
+   * by the internal stub, which is lossy but genuinely does the work.
+   */
+  readonly capabilities: readonly KernelCapability[] = [...KERNEL_CAPABILITIES]
 
   readonly #wasm: RustWasmExports
   readonly #stub = new StubKernel()
@@ -169,14 +221,25 @@ export class RustKernel implements IKernel {
 
   /* --------------------------- dress-up features -------------------------- */
 
+  /**
+   * Rounds the named edges, or every edge when none are named.
+   *
+   * The names are translated into the kernel's own vocabulary first — see
+   * {@link RustKernel.topology} for why a picked edge arrives under a different
+   * one.
+   */
   async fillet(shape: ShapeHandle, params: FilletParams): Promise<ShapeHandle> {
     const body = await this.#bodyOf(shape, 'fillet')
-    return this.#build('fillet', () => this.#wasm.fillet(body, JSON.stringify(params)))
+    const edgeIds = await this.#brepEdgeIds(shape, params.edgeIds ?? [], 'fillet')
+    return this.#build('fillet', () =>
+      this.#wasm.fillet(body, JSON.stringify({ ...params, edgeIds })),
+    )
   }
 
   async chamfer(shape: ShapeHandle, params: ChamferParams): Promise<ShapeHandle> {
     const body = await this.#bodyOf(shape, 'chamfer')
-    const { distance, edgeIds } = params
+    const { distance } = params
+    const edgeIds = await this.#brepEdgeIds(shape, params.edgeIds ?? [], 'chamfer')
     return this.#build('chamfer', () =>
       this.#wasm.chamfer(
         body,
@@ -185,10 +248,24 @@ export class RustKernel implements IKernel {
     )
   }
 
+  /**
+   * Hollows the body, leaving the named faces open.
+   *
+   * The named faces are translated into the kernel's own vocabulary first, so a
+   * face picked in the viewport reaches the exact B-Rep shell rather than a
+   * re-cut tessellation of it. A face that cannot be paired — one strip of a
+   * tessellated cylinder, say, which is no B-Rep face on its own — fails the
+   * operation with the reason, because opening a different face than the one
+   * asked for would be a silent retarget.
+   */
   async shell(shape: ShapeHandle, params: ShellParams): Promise<ShapeHandle> {
     const body = await this.#bodyOf(shape, 'shell')
-    return this.#build('shell', () => this.#wasm.shell(body, JSON.stringify(params)))
+    const openFaceIds = await this.#brepFaceIds(shape, params.openFaceIds ?? [], 'shell')
+    return this.#build('shell', () =>
+      this.#wasm.shell(body, JSON.stringify({ ...params, openFaceIds })),
+    )
   }
+
 
   /* ------------------ operations the Rust kernel has not got -------------- */
 
@@ -237,9 +314,43 @@ export class RustKernel implements IKernel {
 
   /* ------------------------------ questions ------------------------------ */
 
+  /**
+   * The identifiers a caller can name faces, edges and vertices by.
+   *
+   * These are the B-Rep's own, hashed from each face's geometry, and they are
+   * what {@link RustKernel.fillet} and {@link RustKernel.chamfer} take — the
+   * exact path, and the one to use when the ids came from here.
+   *
+   * They are *not* the ids a viewport pick produces. A pick works on the
+   * triangles this kernel hands out, and `kernel/topology` derives its own names
+   * for those; the two vocabularies describe the same solid and share no
+   * identifiers. {@link RustKernel.faceInfo} and {@link RustKernel.edgeInfo}
+   * report the geometry that lets the two be paired, which is what the dress-up
+   * operations here do with a selection before passing it on — see
+   * `kernel/vocabulary`.
+   */
   async topology(shape: ShapeHandle): Promise<Topology> {
     const body = await this.#bodyOf(shape, 'topology')
     return this.#read<Topology>('topology', () => this.#wasm.topology(body))
+  }
+
+  /**
+   * Where each B-Rep face sits, under the ids {@link RustKernel.topology}
+   * reports.
+   *
+   * This is the kernel's own account of its faces, not the tessellated one a
+   * pick sees. It is what makes a picked face nameable to the exact B-Rep
+   * operations.
+   */
+  async faceInfo(shape: ShapeHandle): Promise<readonly FaceInfo[]> {
+    const body = await this.#bodyOf(shape, 'faceInfo')
+    return this.#read<FaceInfo[]>('faceInfo', () => this.#wasm.faceInfo(body))
+  }
+
+  /** The same for edges: where each one runs, under `topology`'s edge ids. */
+  async edgeInfo(shape: ShapeHandle): Promise<readonly EdgeInfo[]> {
+    const body = await this.#bodyOf(shape, 'edgeInfo')
+    return this.#read<EdgeInfo[]>('edgeInfo', () => this.#wasm.edgeInfo(body))
   }
 
   async boundingBox(shape: ShapeHandle): Promise<BoundingBox> {
@@ -279,6 +390,49 @@ export class RustKernel implements IKernel {
   }
 
   /* -------------------------------------------------------------------------- */
+
+  /**
+   * The selection restated in the kernel's own face names.
+   *
+   * An empty selection is passed through untouched: to the operations that take
+   * one it means "all", and surveying a body to translate nothing would only cost
+   * a tessellation. Anything that cannot be paired fails the operation rather
+   * than being dropped, so a shell never quietly opens fewer faces than asked.
+   */
+  async #brepFaceIds(
+    shape: ShapeHandle,
+    ids: readonly string[],
+    operation: string,
+  ): Promise<readonly string[]> {
+    if (ids.length === 0) return ids
+    const translated = translateFaceIds(
+      surveyMeshFaces(await this.triangulate(shape)),
+      surveyFaceInfo(await this.faceInfo(shape)),
+      ids,
+    )
+    return this.#paired(translated, operation)
+  }
+
+  async #brepEdgeIds(
+    shape: ShapeHandle,
+    ids: readonly string[],
+    operation: string,
+  ): Promise<readonly string[]> {
+    if (ids.length === 0) return ids
+    const translated = translateEdgeIds(
+      surveyMeshEdges(await this.triangulate(shape)),
+      surveyEdgeInfo(await this.edgeInfo(shape)),
+      ids,
+    )
+    return this.#paired(translated, operation)
+  }
+
+  #paired(translated: TranslatedIds, operation: string): readonly string[] {
+    if (translated.failures.length > 0) {
+      throw new KernelError(translated.failures.join('; '), operation)
+    }
+    return translated.ids
+  }
 
   #register(shape: Shape): ShapeHandle {
     const id = `rust-${this.#nextId++}`
@@ -356,7 +510,7 @@ export class RustKernel implements IKernel {
 
   #meshOf(body: string, params?: TessellationParams): MeshData {
     return this.#read<MeshData>('triangulate', () =>
-      this.#wasm.triangulate(body, params ? JSON.stringify(params) : undefined),
+      this.#wasm.triangulate(body, params ? JSON.stringify(quality(params)) : undefined),
     )
   }
 

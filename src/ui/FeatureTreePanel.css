@@ -107,6 +107,38 @@
   text-decoration: line-through;
 }
 
+/* A sketch reads as the source it is, not as another build step. */
+.feature-row--sketch .feature-row__icon {
+  color: var(--accent, #4c8dff);
+}
+
+/* Hidden is a display state, not a modelling one — dimmed, never struck out:
+   the features built on this sketch are still building from it. */
+.feature-row--hidden .feature-row__name,
+.feature-row--hidden .feature-row__support {
+  opacity: 0.5;
+}
+
+.feature-row__visibility {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.feature-row__visibility[aria-pressed='true'] {
+  color: var(--accent, #4c8dff);
+}
+
+.feature-row__support {
+  margin: 0 0 0.2rem 2.1rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
 .feature-row__disclosure {
   width: 1rem;
   padding: 0;

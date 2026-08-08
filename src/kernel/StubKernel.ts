@@ -26,9 +26,10 @@ import type {
   Vec2,
   Vec3,
 } from './IKernel'
-import { KernelError, WORLD_XY } from './IKernel'
+import type { KernelCapability } from './IKernel'
+import { KernelError, UnsupportedOperationError, WORLD_XY } from './IKernel'
 import type { TopologyFace } from './topology'
-import { facesById, meshTopology } from './topology'
+import { faceVertexIds, facesById, meshTopology } from './topology'
 
 const DEG = Math.PI / 180
 
@@ -45,7 +46,23 @@ const LOFT_MAX_RING_POINTS = 256
  * recorded rather than evaluated. The WASM kernel replaces it wholesale.
  */
 export class StubKernel implements IKernel {
-  readonly name = 'stub'
+  // Typed as the interface declares it rather than as the literal, so a
+  // subclass can stand in for another backend without widening it here.
+  readonly name: string = 'stub'
+
+  /**
+   * Everything a mesh engine can honestly do. Fillet and chamfer are absent
+   * because rounding or bevelling an edge needs B-Rep topology; asking for
+   * either throws {@link UnsupportedOperationError} rather than handing back the
+   * solid untouched.
+   */
+  readonly capabilities: readonly KernelCapability[] = [
+    'shell',
+    'draft',
+    'hole',
+    'split',
+    'directEdit',
+  ]
 
   #shapes = new Map<string, THREE.BufferGeometry>()
   #nextId = 0
@@ -301,18 +318,25 @@ export class StubKernel implements IKernel {
   }
 
   /**
-   * Recorded, not evaluated: rounding an edge needs B-Rep topology the stub does
-   * not carry. Parameters are still validated so a nonsensical radius fails
-   * loudly, and the solid comes back unchanged.
+   * Not available here.
+   *
+   * Rounding an edge means replacing it with a surface tangent to both faces and
+   * trimming those faces back to meet it — which needs the B-Rep topology the
+   * stub has not got. This used to return the solid unchanged, so a fillet that
+   * had not happened was reported as one that had; refusing is the honest answer,
+   * and {@link IKernel.capabilities} says so before anyone asks.
    */
   async fillet(shape: ShapeHandle, params: FilletParams): Promise<ShapeHandle> {
+    // Validated first, so a nonsensical radius still reads as the user's mistake
+    // rather than as the backend's limitation.
     if (!(params.radius > 0)) {
       throw new KernelError('Fillet radius must be positive', 'fillet')
     }
-    return this.#register(this.#require(shape, 'fillet').clone())
+    this.#require(shape, 'fillet')
+    throw new UnsupportedOperationError(this.name, 'fillet')
   }
 
-  /** Recorded, not evaluated — see {@link StubKernel.fillet}. */
+  /** Not available here — see {@link StubKernel.fillet}. */
   async chamfer(shape: ShapeHandle, params: ChamferParams): Promise<ShapeHandle> {
     if (!(params.distance > 0)) {
       throw new KernelError('Chamfer distance must be positive', 'chamfer')
@@ -320,13 +344,18 @@ export class StubKernel implements IKernel {
     if (params.angle !== undefined && (params.angle <= 0 || params.angle >= 90)) {
       throw new KernelError('Chamfer angle must be between 0 and 90 degrees', 'chamfer')
     }
-    return this.#register(this.#require(shape, 'chamfer').clone())
+    this.#require(shape, 'chamfer')
+    throw new UnsupportedOperationError(this.name, 'chamfer')
   }
 
   /**
    * Hollows the solid by subtracting a shrunken copy of itself. A real shell
    * offsets every face; this scales about the bounding-box centre, so the wall
    * thickness is only nominal on anything but a boxy solid.
+   *
+   * Open faces are cut by the plane of the face that was actually named, taken
+   * from the same {@link meshTopology} derivation that handed the id out — so
+   * opening a side of a box opens *that* side.
    */
   async shell(shape: ShapeHandle, params: ShellParams): Promise<ShapeHandle> {
     const geometry = this.#require(shape, 'shell')
@@ -354,13 +383,25 @@ export class StubKernel implements IKernel {
     let result = csgSubtract(toMeshData(geometry), toMeshData(cavity))
     cavity.dispose()
 
-    if ((params.openFaceIds?.length ?? 0) > 0) {
-      // Face identity is out of reach for the stub, so "open faces" always means
-      // the +Z face: enough to see into the cavity in the viewport.
-      const lid = new THREE.BoxGeometry(size.x * 2, size.y * 2, params.thickness * 2)
-      lid.translate(center.x, center.y, box.max.z)
-      result = csgSubtract(result, toMeshData(lid))
-      lid.dispose()
+    const openFaceIds = params.openFaceIds ?? []
+    if (openFaceIds.length > 0) {
+      const solid = toMeshData(geometry)
+      const faces = facesById(meshTopology(solid), openFaceIds)
+      if (faces.length === 0) {
+        throw new KernelError(
+          `None of the faces this shell opens (${openFaceIds.join(', ')}) belong to the solid`,
+          'shell',
+        )
+      }
+      // A slab straddling each named face's own plane, wide enough to cover the
+      // solid: subtracting it takes the wall off that face and nothing else.
+      const span = Math.max(size.x, size.y, size.z) * 2 + params.thickness * 4
+      for (const face of faces) {
+        const lid = new THREE.BoxGeometry(span, span, params.thickness * 2)
+        lid.applyMatrix4(slabMatrix(face.normal, face.offset))
+        result = csgSubtract(result, toMeshData(lid))
+        lid.dispose()
+      }
     }
 
     return this.#register(finish(toBufferGeometry(result)))
@@ -407,6 +448,16 @@ export class StubKernel implements IKernel {
     return this.#register(finish(toBufferGeometry(result)))
   }
 
+  /**
+   * Tapers the solid about a neutral plane, by pushing each vertex outwards in
+   * proportion to how far along the pull direction it sits.
+   *
+   * `faceIds` narrows that to the vertices the named faces are built from, so
+   * drafting one wall of a box leaves the other three upright. An empty list
+   * drafts the whole shape, as the interface says; a list naming nothing that
+   * belongs to the solid is a stale selection and throws, because tapering
+   * everything instead would answer a request nobody made and call it done.
+   */
   async draft(shape: ShapeHandle, params: DraftParams): Promise<ShapeHandle> {
     const geometry = this.#require(shape, 'draft').clone()
     const { angle, neutralOffset = 0 } = params
@@ -424,6 +475,24 @@ export class StubKernel implements IKernel {
     }
     pull.normalize()
 
+    // Welded ids rather than buffer positions: a corner shared by a drafted and
+    // an undrafted face appears under several vertex numbers, and moving only
+    // some of them would tear the mesh open along that seam.
+    const faceIds = params.faceIds ?? []
+    let drafted: Set<string> | null = null
+    let vertexIdOf: readonly string[] = []
+    if (faceIds.length > 0) {
+      const derived = meshTopology(toMeshData(geometry))
+      drafted = faceVertexIds(derived, faceIds)
+      if (drafted.size === 0) {
+        throw new KernelError(
+          `None of the faces this draft names (${faceIds.join(', ')}) belong to the solid`,
+          'draft',
+        )
+      }
+      vertexIdOf = derived.vertexIdOf
+    }
+
     const box = boundsOf(geometry)
     const center = new THREE.Vector3().addVectors(box.min, box.max).multiplyScalar(0.5)
     // Neutral plane: `neutralOffset` above the lowest point along the pull.
@@ -436,6 +505,7 @@ export class StubKernel implements IKernel {
     const offset = new THREE.Vector3()
 
     for (let index = 0; index < position.count; index += 1) {
+      if (drafted && !drafted.has(vertexIdOf[index] as string)) continue
       point.fromBufferAttribute(position, index).sub(center)
       const axial = point.dot(pull)
       offset.copy(point).addScaledVector(pull, -axial)
@@ -986,6 +1056,24 @@ function weldMap(positions: readonly number[]): number[] {
 function boundsOf(geometry: THREE.BufferGeometry): THREE.Box3 {
   geometry.computeBoundingBox()
   return geometry.boundingBox ?? new THREE.Box3()
+}
+
+/**
+ * Places a slab — a box built flat in local XY — so that its middle sits on the
+ * plane `dot(normal, p) = offset`, with its thickness straddling that plane.
+ *
+ * Straddling rather than sitting behind it is deliberate: a shell's outer wall
+ * lies exactly on the face, so a slab that only reached inwards would leave a
+ * paper-thin skin over the opening it was meant to cut.
+ */
+function slabMatrix(normal: Vec3, offset: number): THREE.Matrix4 {
+  const axis = new THREE.Vector3(normal.x, normal.y, normal.z).normalize()
+  const rotation = new THREE.Matrix4().makeRotationFromQuaternion(
+    new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), axis),
+  )
+  return new THREE.Matrix4()
+    .makeTranslation(axis.x * offset, axis.y * offset, axis.z * offset)
+    .multiply(rotation)
 }
 
 /**

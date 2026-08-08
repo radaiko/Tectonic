@@ -1,16 +1,23 @@
 import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { RustKernel } from '../../src/kernel/RustKernel'
 import { KernelError, WORLD_XY } from '../../src/kernel/IKernel'
 import type { Profile, ShapeHandle, Vec3 } from '../../src/kernel/IKernel'
 import { resetRustKernel, rustError } from '../../src/kernel/rust/RustWasm'
+import { meshTopology } from '../../src/kernel/topology'
 import type { MeshData } from '../../src/domain/MeshData'
 
 /**
  * The browser lets the generated module fetch its own binary; Node cannot fetch
  * a `file:` URL, so the bytes are read here and handed to the loader.
+ *
+ * Resolved from the working directory rather than from `import.meta.url`: the
+ * jsdom environment installs its own `URL`, which resolves a relative specifier
+ * against the document's `http://localhost` base and hands `readFile` something
+ * it rightly refuses. Vitest runs from the project root, so this is exact.
  */
-const WASM = new URL('../../kernel/tectonic-wasm/pkg/tectonic_wasm_bg.wasm', import.meta.url)
+const WASM = resolve(process.cwd(), 'kernel/tectonic-wasm/pkg/tectonic_wasm_bg.wasm')
 
 const square = (size: number): Profile => ({
   points: [
@@ -199,6 +206,119 @@ describe('RustKernel', () => {
       const shape = await box(10, 10)
       const hollow = await kernel.shell(shape, { thickness: 1 })
       expect((await kernel.massProperties(hollow)).volume).toBeLessThan(1000)
+    })
+
+    it('opens a face named the way a viewport pick names one', async () => {
+      const shape = await box(10, 10)
+      // The identifiers a selection is built from come from the tessellation,
+      // never from the B-Rep — a user points at triangles. The B-Rep's own face
+      // ids are hashes that no caller can see, so a shell handed one of these
+      // used to fail with "this body has no face"; it is paired back to the
+      // B-Rep face by geometry now, and gets the exact operation.
+      const mesh = await kernel.triangulate(shape)
+      const top = meshTopology(mesh).faces.find((face) => face.normal.z > 0.99)
+      expect(top).toBeDefined()
+
+      const opened = await kernel.shell(shape, {
+        thickness: 1,
+        openFaceIds: [(top as { id: string }).id],
+      })
+
+      // Exactly the wall: the box less the 8×8×9 cavity a 1mm wall leaves once
+      // the lid is off. An approximation of the same cut would not land here.
+      expect((await kernel.massProperties(opened)).volume).toBeCloseTo(424, 6)
+      expect(await kernel.isSolid(opened)).toBe(true)
+
+      const walls = meshTopology(await kernel.triangulate(opened)).faces
+      const upwardAreaAt = (offset: number): number =>
+        walls
+          .filter((face) => face.normal.z > 0.99 && Math.abs(face.offset - offset) < 1e-6)
+          .reduce((total, face) => total + face.area, 0)
+
+      // The lid is gone: all that is left in its plane is the wall's 36mm² rim,
+      // not the 100mm² face that was opened.
+      expect(upwardAreaAt(10)).toBeCloseTo(36, 6)
+      // And the cavity's floor is exposed one wall-thickness up.
+      expect(upwardAreaAt(1)).toBeCloseTo(64, 6)
+    })
+
+    it('refuses a shell whose faces are not on the solid rather than hollowing it plain', async () => {
+      const shape = await box(10, 10)
+
+      await expect(
+        kernel.shell(shape, { thickness: 1, openFaceIds: ['face-nowhere'] }),
+      ).rejects.toThrow(/face-nowhere/)
+    })
+
+    it('rounds an edge named the way a viewport pick names one', async () => {
+      const shape = await box(10, 10)
+      // Same pairing on the edge side. A picked edge used to reach the kernel
+      // under a name it had never issued and fail as "this body has no edge".
+      const before = meshTopology(await kernel.triangulate(shape))
+      expect(before.edges).toHaveLength(12)
+      const picked = before.edges[0] as { id: string; vertexIds: readonly [string, string] }
+      const cornerOf = (id: string): Vec3 =>
+        (before.vertices.find((vertex) => vertex.id === id) as { position: Vec3 }).position
+
+      const rounded = await kernel.fillet(shape, { radius: 1, edgeIds: [picked.id] })
+
+      // One rounded edge of a 10mm box takes a fixed bite out of it: the square
+      // corner less the blend that replaces it, over the 10mm run. The blend is
+      // faceted — a right angle comes back as four chords — so the fan those
+      // chords span, not the quarter-disc they approximate, is what is left.
+      const blend = 4 * 0.5 * Math.sin(Math.PI / 8)
+      expect((await kernel.massProperties(rounded)).volume).toBeCloseTo(1000 - (1 - blend) * 10, 6)
+
+      // And it is *that* edge: rounding it takes its two corners off the solid
+      // and leaves the box's other six standing. A pairing that reached some
+      // other edge would round the volume away from the wrong place.
+      const after = meshTopology(await kernel.triangulate(rounded)).vertices
+      const survives = (corner: Vec3): boolean =>
+        after.some(
+          (vertex) =>
+            Math.abs(vertex.position.x - corner.x) < 1e-6 &&
+            Math.abs(vertex.position.y - corner.y) < 1e-6 &&
+            Math.abs(vertex.position.z - corner.z) < 1e-6,
+        )
+
+      expect(survives(cornerOf(picked.vertexIds[0]))).toBe(false)
+      expect(survives(cornerOf(picked.vertexIds[1]))).toBe(false)
+      expect(before.vertices.filter((vertex) => survives(vertex.position))).toHaveLength(6)
+    })
+
+    it('refuses an edge it cannot pair rather than rounding a different one', async () => {
+      const shape = await box(10, 10)
+
+      await expect(
+        kernel.fillet(shape, { radius: 1, edgeIds: ['edge-nowhere'] }),
+      ).rejects.toThrow(/edge-nowhere/)
+    })
+
+    it('reports each face under the id the topology names it by', async () => {
+      const shape = await box(10, 5)
+      const { faceIds } = await kernel.topology(shape)
+      const faces = await kernel.faceInfo(shape)
+
+      expect(faces.map((face) => face.id)).toEqual([...faceIds])
+      expect(faces).toHaveLength(6)
+      expect(faces.every((face) => face.kind === 'plane')).toBe(true)
+
+      const top = faces.find((face) => face.normal.z > 0.99)
+      expect(top?.area).toBeCloseTo(100, 6)
+      expect(top?.centroid).toEqual({ x: 5, y: 5, z: 5 })
+    })
+
+    it('reports each edge under the id the topology names it by', async () => {
+      const shape = await box(10, 5)
+      const { edgeIds } = await kernel.topology(shape)
+      const edges = await kernel.edgeInfo(shape)
+
+      expect(edges.map((edge) => edge.id)).toEqual([...edgeIds])
+      expect(edges).toHaveLength(12)
+      expect(edges.every((edge) => edge.kind === 'line')).toBe(true)
+
+      const lengths = edges.map((edge) => edge.length).sort((a, b) => a - b)
+      expect(lengths).toEqual([5, 5, 5, 5, 10, 10, 10, 10, 10, 10, 10, 10])
     })
 
     it('reports which operation failed and why', async () => {
