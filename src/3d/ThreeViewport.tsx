@@ -4,6 +4,8 @@ import type { WebGPURenderer } from 'three/webgpu'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { MeshData } from '../domain/MeshData'
 import { toBufferGeometry } from '../kernel/StubKernel'
+import type { ModelSphere } from './framing'
+import { boundingSphere, frameBox, needsReframing } from './framing'
 import './ThreeViewport.css'
 
 /** A half-space the scene is cut back to, so the inside of a solid is visible. */
@@ -137,8 +139,13 @@ export function ThreeViewport({
   const needsRenderRef = useRef(false)
   const requestRenderRef = useRef<() => void>(() => {})
   // Framing needs the camera and the controls, both of which live inside the
-  // renderer effect; the key handler reaches them through here.
-  const fitViewRef = useRef<() => void>(() => {})
+  // renderer effect; the key handler reaches them through here. The flag asks
+  // for a frame whether or not the model calls for one, which is what the fit
+  // shortcut wants and what an automatic frame must not do.
+  const fitViewRef = useRef<(force?: boolean) => void>(() => {})
+  // The model the camera was last put on, so an automatic frame can tell a
+  // rebuild that changed nothing worth looking at from one that did.
+  const framedRef = useRef<ModelSphere | null>(null)
 
   const [overlayVisible, setOverlayVisible] = useState(false)
   // Off by default, so the viewport keeps drawing as fast as the display allows
@@ -339,27 +346,36 @@ export function ThreeViewport({
        * Pulls the whole model into view, keeping the direction the camera is
        * already looking from. An empty scene is left alone — there is nothing
        * to frame, and moving the camera anyway would only lose the user's view.
+       *
+       * Unforced, this only acts on a model that has actually changed shape;
+       * see {@link needsReframing} for where that line is drawn.
        */
-      const fitView = (): void => {
+      const fitView = (force = true): void => {
+        // Nothing measured yet, so the aspect ratio the framing needs is not
+        // known. `resize` comes straight back here once the container has a
+        // size, which is a real signal rather than a guess at how long to wait.
+        if (container.clientWidth === 0 || container.clientHeight === 0) return
+
         const box = new THREE.Box3().setFromObject(modelGroup)
-        if (box.isEmpty()) return
-        const sphere = box.getBoundingSphere(new THREE.Sphere())
-        // A degenerate body — a single point — still needs a radius to stand off from.
-        const radius = Math.max(sphere.radius, 1)
+        const sphere = boundingSphere(box)
+        if (!sphere) {
+          // Nothing to look at. The next model to arrive is framed from scratch
+          // rather than measured against one that is no longer there.
+          framedRef.current = null
+          return
+        }
+        if (!force && !needsReframing(framedRef.current, sphere)) return
 
-        // Half the vertical field of view is what has to clear the sphere; the
-        // margin leaves the model off the very edge of the frame.
-        const distance = (radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.2
-        const direction = camera.position.clone().sub(controls.target)
-        if (direction.lengthSq() === 0) direction.set(1, 0.75, 1.15)
-        direction.normalize()
+        const framing = frameBox(camera, controls.target, box)
+        if (!framing) return
 
-        controls.target.copy(sphere.center)
-        camera.position.copy(sphere.center).addScaledVector(direction, distance)
-        camera.near = distance / 100
-        camera.far = distance * 100
+        controls.target.copy(framing.target)
+        camera.position.copy(framing.position)
+        camera.near = framing.near
+        camera.far = framing.far
         camera.updateProjectionMatrix()
         controls.update()
+        framedRef.current = sphere
         requestRender()
       }
       fitViewRef.current = fitView
@@ -371,6 +387,11 @@ export function ThreeViewport({
         camera.aspect = clientWidth / clientHeight
         camera.updateProjectionMatrix()
         requestRender()
+        // A model loaded while the viewport was hidden — the shell keeps this
+        // surface mounted behind the sketch — has been waiting for an aspect
+        // ratio to be framed against. Unforced, so a resize never takes the
+        // camera off a model the user has already been shown.
+        fitView(false)
       }
       resize()
 
@@ -467,6 +488,12 @@ export function ThreeViewport({
     // The scene changed under an otherwise idle viewport, which has no frame of
     // its own coming.
     requestRenderRef.current()
+
+    // A rebuild that turned the part into something the current view has no
+    // room for — the first body to arrive, or a feature built at a sketch's
+    // coordinates — puts the camera back on it. Until the renderer has attached
+    // this is a no-op and `resize` picks it up.
+    fitViewRef.current(false)
 
     return () => {
       material.dispose()

@@ -25,15 +25,22 @@
   align-items: center;
   justify-content: center;
   width: 36px;
-  height: 32px;
+  height: 34px;
   padding: 0;
-  font-size: 1rem;
   line-height: 1;
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 5px;
   cursor: pointer;
+}
+
+/* Vector artwork, so it is the stroke weight rather than a bitmap that has to
+   hold up: keep it off the pixel grid's mercy and let the button's colour
+   cascade into it. */
+.sketch__tool-icon {
+  display: block;
+  overflow: visible;
 }
 
 .sketch__tool:hover {

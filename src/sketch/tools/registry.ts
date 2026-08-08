@@ -20,8 +20,6 @@ import type { SketchTool, ToolId, ToolSettings } from './SketchTool'
 export interface ToolDefinition {
   readonly id: ToolId
   readonly label: string
-  /** Single glyph for the toolbar button. */
-  readonly icon: string
   readonly hint: string
   /** Unmodified letter that picks this tool, upper case. Not every tool has one. */
   readonly shortcut?: string
@@ -44,7 +42,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'select',
     label: 'Select',
-    icon: '⬉',
     hint: 'Pick, box-select and drag geometry',
     shortcut: 'V',
     options: [],
@@ -53,7 +50,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'line',
     label: 'Line',
-    icon: '⁄',
     hint: 'Click to chain segments, Esc to end',
     shortcut: 'L',
     options: [],
@@ -62,7 +58,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'circle',
     label: 'Circle',
-    icon: '○',
     hint: 'Drag from the centre to the radius',
     shortcut: 'C',
     options: [],
@@ -71,7 +66,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'arc',
     label: 'Arc',
-    icon: '◠',
     hint: 'Two endpoints, then a point on the arc',
     shortcut: 'A',
     options: [],
@@ -80,7 +74,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'rectangle',
     label: 'Rectangle',
-    icon: '▭',
     hint: 'Drag corner to corner, Alt for centred',
     shortcut: 'R',
     options: [],
@@ -89,7 +82,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'slot',
     label: 'Slot',
-    icon: '⬭',
     hint: 'Two centres, then the width',
     options: [],
     create: () => new SlotTool(),
@@ -97,7 +89,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'polygon',
     label: 'Polygon',
-    icon: '⬡',
     hint: 'Centre, then the circumscribed radius',
     options: [{ key: 'polygonSides', label: 'Sides', kind: NUMBER, min: 3, step: 1 }],
     create: () => new PolygonTool('regular'),
@@ -105,7 +96,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'ellipse',
     label: 'Ellipse',
-    icon: '⬮',
     hint: 'Centre, major axis, then the minor radius',
     options: [],
     create: () => new EllipseTool(),
@@ -113,7 +103,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'spline',
     label: 'Spline',
-    icon: '∿',
     hint: 'Click control points, double click to finish',
     options: [],
     create: () => new SplineTool(),
@@ -121,7 +110,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'trim',
     label: 'Trim',
-    icon: '✂',
     hint: 'Click a stretch to cut, Shift to extend',
     shortcut: 'T',
     options: [],
@@ -130,7 +118,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'fillet',
     label: 'Fillet',
-    icon: '◜',
     hint: 'Pick two lines to round their corner',
     shortcut: 'F',
     options: [{ key: 'filletRadius', label: 'Radius', kind: NUMBER, min: 0, step: 0.5 }],
@@ -139,7 +126,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'chamfer',
     label: 'Chamfer',
-    icon: '◺',
     hint: 'Pick two lines to cut their corner',
     options: [{ key: 'chamferDistance', label: 'Distance', kind: NUMBER, min: 0, step: 0.5 }],
     create: () => new ChamferTool(),
@@ -147,7 +133,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'dimension',
     label: 'Dimension',
-    icon: '↔',
     hint: 'Pick geometry to drive it with a value',
     shortcut: 'D',
     options: [],
@@ -156,7 +141,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'mirror',
     label: 'Mirror',
-    icon: '⇄',
     hint: 'Select geometry, then pick the mirror line',
     shortcut: 'M',
     options: [],
@@ -165,7 +149,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'pattern',
     label: 'Pattern',
-    icon: '▦',
     hint: 'Select geometry, then pick the direction or centre',
     shortcut: 'P',
     options: [
@@ -179,7 +162,6 @@ export const SKETCH_TOOLS: readonly ToolDefinition[] = [
   {
     id: 'offset',
     label: 'Offset',
-    icon: '⧉',
     hint: 'Click a curve on the side to offset towards',
     options: [{ key: 'offsetDistance', label: 'Distance', kind: NUMBER, min: 0, step: 0.5 }],
     create: () => new OffsetTool(),

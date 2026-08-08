@@ -22,6 +22,7 @@ import type {
   ToolSettings,
 } from './tools/SketchTool'
 import { DEFAULT_TOOL_SETTINGS } from './tools/SketchTool'
+import { ToolIcon } from './tools/ToolIcon'
 import {
   SKETCH_TOOLS,
   createTool,
@@ -445,7 +446,7 @@ export function SketchEditor({
             title={`${entry.label}${entry.shortcut ? ` (${entry.shortcut})` : ''} — ${entry.hint}`}
             onClick={() => selectTool(entry.id)}
           >
-            <span aria-hidden="true">{entry.icon}</span>
+            <ToolIcon tool={entry.id} />
           </button>
         ))}
       </div>
