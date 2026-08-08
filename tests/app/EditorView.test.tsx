@@ -41,6 +41,24 @@ async function openFirstSketch(): Promise<void> {
   await userEvent.click(within(list).getAllByRole('button')[0] as HTMLElement)
 }
 
+/**
+ * Runs a profile feature end to end: press the command, name the sketch it
+ * builds from, confirm.
+ *
+ * There is deliberately no shortcut past the middle step. Pressing Extrude only
+ * opens the selection input now — which sketch gets consumed is a question the
+ * user answers, so a test that wants an extrusion has to answer it too.
+ */
+async function extrude(sketchName: string): Promise<void> {
+  await userEvent.click(screen.getByRole('button', { name: 'Extrude' }))
+  const dialog = screen.getByRole('dialog', { name: 'Extrude' })
+  await userEvent.selectOptions(
+    within(dialog).getByRole('combobox'),
+    within(dialog).getByRole('option', { name: new RegExp(`^${sketchName} —`) }),
+  )
+  await userEvent.click(within(dialog).getByRole('button', { name: 'OK' }))
+}
+
 const TRIANGLE = {
   positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
   normals: [0, 0, 1, 0, 0, 1, 0, 0, 1],
@@ -238,7 +256,7 @@ describe('multiple sketches', () => {
     // Picking a plane opens the sketch, so building on it means finishing first
     // — which is exactly the round trip the ribbon models.
     await userEvent.click(screen.getByRole('button', { name: 'Finish Sketch' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Extrude' }))
+    await extrude('Sketch 2')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     const saved: TectonicDocument = onSave.mock.calls[0]?.[0]
@@ -399,7 +417,7 @@ describe('the history as one ordered list', () => {
 
     expect(rows()).toEqual(['Sketch 1'])
 
-    await userEvent.click(screen.getByRole('button', { name: 'Extrude' }))
+    await extrude('Sketch 1')
 
     await waitFor(() => expect(rows()).toEqual(['Sketch 1', 'Extrude 1']))
   })
@@ -408,7 +426,7 @@ describe('the history as one ordered list', () => {
   it('puts a newly drawn sketch after the features already built', async () => {
     render(<EditorView document={createDocument({ now: NOW })} onSave={vi.fn()} onClose={vi.fn()} />)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Extrude' }))
+    await extrude('Sketch 1')
     const planes = screen.getByRole('group', { name: 'New sketch on plane' })
     await userEvent.click(within(planes).getByRole('button', { name: 'YZ' }))
 
@@ -540,7 +558,7 @@ describe('document undo and redo', () => {
     // properties panel, and "is it in the history" is the question here.
     const historyList = (): HTMLElement => screen.getByRole('list', { name: 'Feature tree' })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Extrude' }))
+    await extrude('Sketch 1')
     expect(await within(historyList()).findByText('Extrude 1')).toBeDefined()
 
     const undo = screen.getByRole('button', { name: 'Undo' })
@@ -586,7 +604,7 @@ describe('document undo and redo', () => {
 
   it('answers Ctrl+Z on the 3D surface, where nothing else claims it', async () => {
     render(<EditorView document={createDocument({ now: NOW })} onSave={vi.fn()} onClose={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Extrude' }))
+    await extrude('Sketch 1')
     const historyList = (): HTMLElement => screen.getByRole('list', { name: 'Feature tree' })
     expect(await within(historyList()).findByText('Extrude 1')).toBeDefined()
 

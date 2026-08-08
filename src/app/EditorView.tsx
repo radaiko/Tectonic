@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { ThreeViewport } from '../3d/ThreeViewport'
+import { buildSketchOverlays, resolveOverlayFrame } from '../3d/sketchOverlay'
 import type { MeshData } from '../domain/MeshData'
 import type { Body, TectonicDocument } from '../domain/Document'
 import {
@@ -30,15 +31,19 @@ import type { GeometryKind } from '../features/domain/geometryRefs'
 import { ID_KEYS, referencePatch } from '../features/domain/geometryRefs'
 import { inferParentFeatureIds } from '../features/domain/dependencies'
 import { createFeature, nextFeatureName } from '../features/domain/factory'
+import { sketchReferenceIds } from '../features/domain/timeline'
 import type { IKernel, KernelCapability } from '../kernel/IKernel'
 import { missingCapabilities } from '../kernel/IKernel'
 import { faceReference, surveyMeshFaces } from '../kernel/references'
 import { StubKernel } from '../kernel/StubKernel'
 import { SketchEditor } from '../sketch/SketchEditor'
-import type { SketchPlane } from '../sketch/domain/SketchSupport'
+import { projectFaceBoundary } from '../sketch/domain/projection'
+import type { SketchPlane, SketchSupport } from '../sketch/domain/SketchSupport'
 import {
   ORIGIN_PLANES,
+  describeSupport,
   faceSupport,
+  isFaceSupport,
   isOriginPlaneSupport,
   originPlaneSupport,
   sameSupport,
@@ -46,6 +51,7 @@ import {
 import type { ToolId } from '../sketch/tools/SketchTool'
 import { SKETCH_TOOLS, toolDefinition } from '../sketch/tools/registry'
 import { BrowserPanel } from '../ui/BrowserPanel'
+import { CommandDialog } from '../ui/CommandDialog'
 import type { Command } from '../ui/commands'
 import type { ComputedValue } from '../ui/FeaturePropertiesPanel'
 import { Icon } from '../ui/Icon'
@@ -88,10 +94,14 @@ const EMPTY_OWNERS: ReadonlyMap<string, string> = new Map()
 const NONE_HIDDEN: ReadonlySet<string> = new Set<string>()
 /**
  * What a click can land on when no command has narrowed it: the origin planes
- * of an empty document, then faces, then edges. Faces first because they are by
- * far the easier target — an edge is reached by arming a field that wants one.
+ * of an empty document, then the sketches drawn over the model, then faces, then
+ * edges. Faces before edges because they are by far the easier target — an edge
+ * is reached by arming a field that wants one. Sketches ahead of both because a
+ * sketch overlay lies on the face it was drawn on.
  */
-const DEFAULT_PICKABLE: readonly SelectionKind[] = ['origin-plane', 'face', 'edge']
+const DEFAULT_PICKABLE: readonly SelectionKind[] = ['origin-plane', 'sketch', 'face', 'edge']
+/** While a command is asking which sketch to build from, only sketches are pickable. */
+const SKETCH_ONLY_PICKABLE: readonly SelectionKind[] = ['sketch']
 
 export interface EditorViewProps {
   readonly document: TectonicDocument
@@ -254,9 +264,27 @@ export function EditorView({
    * one-pixel-wide edge is a realistic target.
    */
   const [picking, setPicking] = useState<{ key: string; kind: SelectionKind } | null>(null)
+  /**
+   * The feature command that has been started but not yet run, and the sketch it
+   * has been given so far.
+   *
+   * A feature that consumes a profile cannot be built from a guess. Pressing
+   * Extrude used to append a feature pointed at whichever sketch the editor
+   * thought was current, which is right exactly while a document has one sketch
+   * in it. Now pressing it opens a selection input: the command sits here,
+   * visible and cancellable, until a sketch has actually been named.
+   */
+  const [pendingFeature, setPendingFeature] = useState<{
+    readonly type: FeatureType
+    readonly sketchId: string | null
+  } | null>(null)
 
   const activeSketch =
     sketches.find((entry) => entry.id === selectedSketchId) ?? sketches[0] ?? null
+
+  /** The sketch a running feature command has been given, if it has been given one. */
+  const pendingSketch =
+    sketches.find((entry) => entry.id === pendingFeature?.sketchId) ?? null
 
   // Every edit to the tree or its parameters ends here: one rebuild, whose
   // result is dropped when a newer one has already started.
@@ -327,6 +355,12 @@ export function EditorView({
     [allBodies],
   )
 
+  /** The same for a sketch, so a picked overlay reads as "Sketch 2". */
+  const sketchNameOf = useCallback(
+    (sketchId: string) => sketches.find((entry) => entry.id === sketchId)?.name,
+    [sketches],
+  )
+
   /**
    * How far the section sliders reach: the model's own extent, rounded up, so a
    * 5 mm part and a 500 mm one both get a slider that spans them. A fixed range
@@ -364,6 +398,18 @@ export function EditorView({
     activeSketch && activeSketch.visible && isOriginPlaneSupport(activeSketch.support)
       ? activeSketch.support.plane
       : null
+
+  /**
+   * The sketches, lifted onto their support planes for the 3D view.
+   *
+   * Recomputed on the revision counter as well as the lists themselves, because
+   * the sketch models are mutated in place — drawing a line changes the contents
+   * of an object React has already seen, and the counter is what says so.
+   */
+  const overlayResult = useMemo(
+    () => buildSketchOverlays(sketches, allBodies),
+    [allBodies, revision, sketches],
+  )
 
   const selectedFeature = selectedFeatureId ? (tree.getFeature(selectedFeatureId) ?? null) : null
   const computed = useMemo<ComputedValue[]>(
@@ -494,14 +540,16 @@ export function EditorView({
   )
 
   /**
-   * Appends a feature of the given kind and shows it. Kinds that consume a
-   * profile are pointed at the selected sketch — not at an implicit singleton —
-   * so which sketch gets built is the one the user picked. The rest work off
-   * whatever the tree has built so far.
+   * Appends a feature of the given kind and shows it.
+   *
+   * `sketchId` is the profile it consumes, and it is a required argument rather
+   * than something read off the editor's current state: "which sketch is this
+   * built from" is a question only the user can answer, and every caller that
+   * needs an answer has been through {@link startFeature} to get one.
    */
-  const addFeature = useCallback(
-    (type: FeatureType) => {
-      const sketch = isSketchFeature(type) ? (activeSketch ?? null) : null
+  const commitFeature = useCallback(
+    (type: FeatureType, sketchId: string | null) => {
+      const sketch = sketchId ? (sketches.find((entry) => entry.id === sketchId) ?? null) : null
       const feature = createFeature(type, {
         name: nextFeatureName(type, tree.features),
         sketchId: sketch?.id ?? null,
@@ -519,8 +567,47 @@ export function EditorView({
       setSurface('model')
       touch(`Add ${featureLabel(type)}`)
     },
-    [activeSketch, evaluation, touch, tree],
+    [evaluation, sketches, touch, tree],
   )
+
+  /**
+   * Runs a feature command.
+   *
+   * Kinds that consume a profile do not build anything here: they open a
+   * selection input and wait to be told which sketch. Everything else works off
+   * what the tree has already built and is appended straight away.
+   */
+  const startFeature = useCallback(
+    (type: FeatureType) => {
+      if (!isSketchFeature(type)) {
+        commitFeature(type, null)
+        return
+      }
+      if (sketches.length === 0) {
+        setNotice(`${featureLabel(type)} builds from a sketch, and this document has none yet.`)
+        return
+      }
+      setSurface('model')
+      setSelection(EMPTY_SELECTION)
+      // Pre-armed with nothing, deliberately. Offering the last sketch as a
+      // default is the same guess in a friendlier coat: the user would confirm
+      // it without reading it, which is how the wrong profile gets extruded.
+      setPendingFeature({ type, sketchId: null })
+    },
+    [commitFeature, sketches],
+  )
+
+  const cancelPendingFeature = useCallback(() => {
+    setPendingFeature(null)
+    setSelection(EMPTY_SELECTION)
+  }, [])
+
+  const confirmPendingFeature = useCallback(() => {
+    if (!pendingFeature?.sketchId) return
+    commitFeature(pendingFeature.type, pendingFeature.sketchId)
+    setPendingFeature(null)
+    setSelection(EMPTY_SELECTION)
+  }, [commitFeature, pendingFeature])
 
   /**
    * Opens a sketch on a base plane for drawing, adding one if the plane has
@@ -568,8 +655,32 @@ export function EditorView({
       )
       const sketch = reusable ?? createSketchOn(support, nextSketchName(sketches))
       if (!reusable) sketches.push(sketch)
+
+      // The face's own outline, brought into the sketch as construction
+      // geometry. Without it the first thing anyone does on a face is guess
+      // where its edges are; with it they can snap and dimension to the real
+      // boundary. Construction, so it can never be mistaken for a profile.
+      let projection: string | null = null
+      if (body && sketch.entities.size === 0) {
+        const placed = resolveOverlayFrame(sketch, allBodies)
+        if (placed.status !== 'ok') {
+          projection = placed.reason
+        } else {
+          const result = projectFaceBoundary(sketch, body.mesh, faceId, placed.frame)
+          // Not a failure of the model, and not something to paper over: this
+          // backend could not hand back a boundary for that face, and the
+          // sketch opens without one rather than with an invented rectangle.
+          if (result.status !== 'ok') projection = result.reason
+        }
+      }
+
       setSelectedSketchId(sketch.id)
       setSurface('sketch')
+      setNotice(
+        projection === null
+          ? null
+          : `${sketch.name} opened without the face outline projected into it — ${projection}.`,
+      )
       touch(reusable ? `Open ${sketch.name}` : 'Add sketch on a face')
     },
     [allBodies, sketches, touch],
@@ -582,10 +693,96 @@ export function EditorView({
     addSketchOnFace(face.bodyId, face.faceId)
   }, [addSketchOnFace, faceTarget])
 
-  const selectSketch = useCallback((sketchId: string) => {
-    setSelectedSketchId(sketchId)
-    setSurface('sketch')
-  }, [])
+  /**
+   * The support the current selection would put a sketch on, or null when it
+   * would not put one anywhere.
+   *
+   * Exactly one thing, and that thing an origin plane or a planar face. Two
+   * faces do not describe a plane to draw on, and neither does an edge — so
+   * rather than picking one of them and hoping, Create Sketch is simply not
+   * available and says what it wants instead.
+   */
+  const selectedSupport = useMemo<SketchSupport | null>(() => {
+    if (selection.length !== 1) return null
+    const item = selection[0]
+    if (!item) return null
+    if (item.kind === 'origin-plane') return originPlaneSupport(item.plane)
+    if (item.kind !== 'face') return null
+
+    const body = allBodies.find((candidate) => candidate.id === item.bodyId)
+    if (!body) return null
+    const survey = surveyMeshFaces(body.mesh)
+    const face = survey.find((candidate) => candidate.id === item.faceId)
+    // A non-planar face has no sketch plane. The mesh derivation only ever
+    // produces planes, but a B-Rep backend does not, and this is where that
+    // difference has to be respected rather than assumed away.
+    if (!face || (face.kind !== undefined && face.kind !== 'plane')) return null
+    return faceSupport(
+      item.bodyId,
+      item.faceId,
+      0,
+      faceReference(survey, item.faceId)?.fingerprint,
+    )
+  }, [allBodies, selection])
+
+  /** Why Create Sketch is unavailable, for the button that is offering it. */
+  const createSketchHint = useMemo(() => {
+    if (selectedSupport) return `Start a sketch on the ${describeSupport(selectedSupport)}`
+    if (selection.length === 0) return 'Select an origin plane or a planar face first'
+    if (selection.length > 1) return 'Select just one origin plane or planar face'
+    return 'A sketch needs an origin plane or a planar face to sit on'
+  }, [selectedSupport, selection])
+
+  /**
+   * Starts a sketch on whatever is selected. The one explicit way a pick in the
+   * viewport turns into a sketch — pressed by name, never inferred from a click.
+   */
+  const createSketchFromSelection = useCallback(() => {
+    const support = selectedSupport
+    if (!support) {
+      setNotice(createSketchHint)
+      return
+    }
+    if (isOriginPlaneSupport(support)) addSketch(support.plane)
+    else addSketchOnFace(support.bodyId, support.faceId)
+  }, [addSketch, addSketchOnFace, createSketchHint, selectedSupport])
+
+  /**
+   * What choosing a sketch in the browser or the timeline means.
+   *
+   * Normally: open it for drawing. While a command is waiting for one, it means
+   * "this is the sketch" instead — the same row, answering the question that is
+   * actually on screen. Anything else would make the user hunt for a second,
+   * command-specific list of the sketches they can already see.
+   */
+  const selectSketch = useCallback(
+    (sketchId: string) => {
+      if (pendingFeature) {
+        setPendingFeature({ ...pendingFeature, sketchId })
+        setSelection([{ kind: 'sketch', sketchId }])
+        return
+      }
+      setSelectedSketchId(sketchId)
+      setSurface('sketch')
+    },
+    [pendingFeature],
+  )
+
+  /**
+   * What is picked, with a running command given first refusal on it.
+   *
+   * The viewport reports every pick the same way; this is where a pick made
+   * while Extrude is asking for a sketch also becomes that command's answer.
+   */
+  const handleSelectionChange = useCallback(
+    (next: readonly SelectionItem[]) => {
+      setSelection(next)
+      if (!pendingFeature) return
+      const picked = next.find((item) => item.kind === 'sketch')
+      if (picked) setPendingFeature({ ...pendingFeature, sketchId: picked.sketchId })
+    },
+    [pendingFeature],
+  )
 
   /** Leaves the sketch for the 3D view. The way out, matching the way in. */
   const finishSketch = useCallback(() => setSurface('model'), [])
@@ -615,6 +812,80 @@ export function EditorView({
       touch(`${sketch.visible ? 'Show' : 'Hide'} ${sketch.name}`)
     },
     [sketches, touch],
+  )
+
+  /**
+   * Removes a sketch from the document.
+   *
+   * A sketch can have two very different kinds of thing depending on it: the
+   * features that consume it as a profile, and the sketches attached to faces of
+   * the bodies those features made. Neither is quietly repointed at something
+   * else — retargeting a dependent is how a part silently becomes a different
+   * part — and neither is quietly destroyed. They are named, the deletion is
+   * confirmed, and what is left behind is left in a state that says it is
+   * broken: the features keep their reference and fail their next rebuild with
+   * "the sketch is missing from the document", which is exactly what happened.
+   */
+  const handleDeleteSketch = useCallback(
+    (sketchId: string) => {
+      const index = sketches.findIndex((entry) => entry.id === sketchId)
+      const sketch = sketches[index]
+      if (!sketch || index < 0) return
+
+      const dependentFeatures = tree.features.filter((feature) =>
+        sketchReferenceIds(feature).includes(sketchId),
+      )
+      const ownerByBody = evaluation?.ownerByBody ?? EMPTY_OWNERS
+      const doomedFeatureIds = new Set(dependentFeatures.map((feature) => feature.id))
+      const strandedBodyIds = new Set(
+        [...ownerByBody.entries()]
+          .filter(([, featureId]) => doomedFeatureIds.has(featureId))
+          .map(([bodyId]) => bodyId),
+      )
+      const strandedSketches = sketches.filter(
+        (entry) =>
+          entry.id !== sketchId &&
+          isFaceSupport(entry.support) &&
+          strandedBodyIds.has(entry.support.bodyId),
+      )
+
+      const affected = [
+        ...dependentFeatures.map((feature) => feature.name),
+        ...strandedSketches.map((entry) => entry.name),
+      ]
+      if (affected.length > 0) {
+        const confirmed = window.confirm(
+          `${affected.join(', ')} ${affected.length === 1 ? 'depends' : 'depend'} on ${sketch.name}. ` +
+            `Deleting it leaves ${affected.length === 1 ? 'it' : 'them'} unbuildable until you ` +
+            'repoint or delete them by hand. Continue?',
+        )
+        if (!confirmed) return
+      }
+
+      sketches.splice(index, 1)
+
+      // Whatever was pointing at it stops pointing at it.
+      setSelection((current) =>
+        current.filter((item) => item.kind !== 'sketch' || item.sketchId !== sketchId),
+      )
+      setPendingFeature((current) =>
+        current && current.sketchId === sketchId ? { ...current, sketchId: null } : current,
+      )
+      if (selectedSketchId === sketchId) setSelectedSketchId(null)
+      if (activeSketch?.id === sketchId) setSurface('model')
+
+      setNotice(
+        affected.length === 0
+          ? `Deleted ${sketch.name}.`
+          : `Deleted ${sketch.name}. ${affected.join(', ')} ${
+              affected.length === 1 ? 'has' : 'have'
+            } lost ${affected.length === 1 ? 'its' : 'their'} input and will report an error until you fix ${
+              affected.length === 1 ? 'it' : 'them'
+            }.`,
+      )
+      touch(`Delete ${sketch.name}`)
+    },
+    [activeSketch, evaluation, selectedSketchId, sketches, touch, tree],
   )
 
   /* ---------------------------------------------------------------------- */
@@ -786,8 +1057,13 @@ export function EditorView({
    * edge means hitting a line one pixel wide with a face right behind it.
    */
   const pickable = useMemo<readonly SelectionKind[]>(
-    () => (picking ? [picking.kind] : DEFAULT_PICKABLE),
-    [picking],
+    () =>
+      picking
+        ? [picking.kind]
+        : pendingFeature
+          ? SKETCH_ONLY_PICKABLE
+          : DEFAULT_PICKABLE,
+    [pendingFeature, picking],
   )
 
   const handleParameterChange = useCallback(
@@ -824,23 +1100,29 @@ export function EditorView({
       // from a click, which is exactly where a ref is meant to be read.
       // eslint-disable-next-line react-hooks/refs
       modelWorkspaceTabs({
-        hasSketch: activeSketch !== null,
+        hasSketch: sketches.length > 0,
         hasBodies: allBodies.length > 0,
         missingCapabilities: missing,
         backend,
-        onFeature: addFeature,
+        onFeature: startFeature,
+        onCreateSketch: createSketchFromSelection,
+        canCreateSketch: selectedSupport !== null,
+        createSketchHint,
         onExport: () => setExportOpen(true),
         onSection: handleToggleSection,
         sectionActive: section.mode !== 'off',
       }),
     [
-      activeSketch,
-      addFeature,
       allBodies.length,
       backend,
+      createSketchFromSelection,
+      createSketchHint,
       handleToggleSection,
       missing,
       section.mode,
+      selectedSupport,
+      sketches.length,
+      startFeature,
     ],
   )
 
@@ -882,6 +1164,12 @@ export function EditorView({
       // one, which the plane, face and sketch-tool commands below all do.
       { id: 'view:model', title: 'Finish Sketch', category: 'View', run: finishSketch },
       { id: 'view:fit', title: 'Fit View', category: 'View', shortcut: 'F', run: requestFit },
+      {
+        id: 'sketch:create',
+        title: 'Create Sketch',
+        category: 'Sketch',
+        run: createSketchFromSelection,
+      },
       ...ORIGIN_PLANES.map((plane) => ({
         id: `sketch:new:${plane}`,
         title: `New Sketch on ${plane}`,
@@ -906,10 +1194,20 @@ export function EditorView({
             ? 'Surface'
             : 'Model',
         ...(FEATURE_SHORTCUTS[type] ? { shortcut: FEATURE_SHORTCUTS[type] } : {}),
-        run: () => addFeature(type),
+        run: () => startFeature(type),
       })),
     ],
-    [addFeature, addSketch, finishSketch, handleRedo, handleSave, handleUndo, onClose, showSketchTool],
+    [
+      addSketch,
+      createSketchFromSelection,
+      finishSketch,
+      handleRedo,
+      handleSave,
+      handleUndo,
+      onClose,
+      showSketchTool,
+      startFeature,
+    ],
   )
 
   useEffect(() => {
@@ -953,14 +1251,32 @@ export function EditorView({
       if (event.ctrlKey || event.metaKey || event.altKey) return
 
       if (event.key === 'Escape') {
+        // A running command comes first: Escape is how anyone gets out of a
+        // selection mode, and clearing the feature selection underneath it
+        // would leave the command still on screen and still waiting.
+        if (pendingFeature) {
+          event.preventDefault()
+          cancelPendingFeature()
+          return
+        }
         setSelectedFeatureId(null)
         return
       }
       // Only in the 3D surface: in a sketch the same key deletes geometry.
       if (event.key === 'Delete' || event.key === 'Backspace') {
-        if (surface === 'model' && selectedFeatureId) {
+        if (surface !== 'model') return
+        if (selectedFeatureId) {
           event.preventDefault()
           handleDelete(selectedFeatureId)
+          return
+        }
+        // Nothing in the tree is picked, so a picked sketch is what Delete
+        // means. Deliberately second: a feature selection is the more specific
+        // statement of what the user is working on.
+        const pickedSketch = selection.find((item) => item.kind === 'sketch')
+        if (pickedSketch) {
+          event.preventDefault()
+          handleDeleteSketch(pickedSketch.sketchId)
         }
         return
       }
@@ -968,19 +1284,25 @@ export function EditorView({
       const type = FEATURE_BY_KEY.get(event.key.toLowerCase())
       if (type) {
         event.preventDefault()
-        addFeature(type)
+        // The same command the ribbon runs, selection input and all. A bare
+        // letter must not be a shortcut past the question the button asks.
+        startFeature(type)
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [
-    addFeature,
+    cancelPendingFeature,
     handleDelete,
+    handleDeleteSketch,
     handleRedo,
     handleSave,
     handleUndo,
+    pendingFeature,
     selectedFeatureId,
+    selection,
+    startFeature,
     surface,
   ])
 
@@ -1008,6 +1330,17 @@ export function EditorView({
     if (selection.length > 0) {
       items.push({ id: 'selection', label: `${selection.length} selected`, tone: 'accent' })
     }
+    // A sketch that cannot be placed draws nothing in 3D, and a viewport that is
+    // quietly missing a sketch looks exactly like one whose sketch is empty.
+    if (overlayResult.problems.length > 0) {
+      items.push({
+        id: 'sketch-overlays',
+        label: plural(overlayResult.problems.length, 'sketch not placed', 'sketches not placed'),
+        icon: 'warning',
+        tone: 'warning',
+        title: overlayResult.problems.map((problem) => problem.reason).join('\n'),
+      })
+    }
     if (evaluation && evaluation.failures.length > 0) {
       items.push({
         id: 'failures',
@@ -1017,7 +1350,15 @@ export function EditorView({
       })
     }
     return items
-  }, [document, evaluation, hiddenBodyIds, modelledBodies, selection, triangles])
+  }, [
+    document,
+    evaluation,
+    hiddenBodyIds,
+    modelledBodies,
+    overlayResult,
+    selection,
+    triangles,
+  ])
 
   return (
     <div className="editor">
@@ -1091,9 +1432,10 @@ export function EditorView({
           }}
           sketches={{
             sketches,
-            selectedId: activeSketch?.id ?? null,
+            selectedId: pendingFeature ? pendingSketch?.id ?? null : activeSketch?.id ?? null,
             onSelect: selectSketch,
             onToggleVisibility: handleToggleSketchVisibility,
+            onDelete: handleDeleteSketch,
             faceGroups,
             faceTarget,
             onFaceTargetChange: setFaceTarget,
@@ -1126,7 +1468,7 @@ export function EditorView({
               : null
           }
           selection={selection}
-          onSelectionChange={setSelection}
+          onSelectionChange={handleSelectionChange}
         />
 
         {/* Both surfaces stay mounted so switching keeps their state and the
@@ -1159,14 +1501,58 @@ export function EditorView({
               active={!drawing}
               originPlanes={visiblePlanes}
               selectedPlane={activePlane}
-              onSelectPlane={addSketch}
-              onSelectFace={addSketchOnFace}
+              sketchOverlays={overlayResult.overlays}
               selection={selection}
-              onSelectionChange={setSelection}
+              onSelectionChange={handleSelectionChange}
               pickable={pickable}
               clipPlane={clipPlanes}
               fitRequest={fitRequest}
             />
+
+            {/* The running command, over the scene it is picking from. */}
+            {pendingFeature ? (
+              <CommandDialog
+                title={featureLabel(pendingFeature.type)}
+                prompt={`Select the sketch to ${featureLabel(pendingFeature.type).toLowerCase()}. Click its outline in the 3D view, or pick it from the browser, the timeline or the list below.`}
+                emptyLabel="No sketch selected yet."
+                chips={
+                  pendingSketch
+                    ? [
+                        {
+                          id: pendingSketch.id,
+                          label: `${pendingSketch.name} — ${describeSupport(pendingSketch.support)}`,
+                          onRemove: () =>
+                            setPendingFeature({ ...pendingFeature, sketchId: null }),
+                        },
+                      ]
+                    : []
+                }
+                canConfirm={pendingSketch !== null}
+                onConfirm={confirmPendingFeature}
+                onCancel={cancelPendingFeature}
+              >
+                {/* The chooser. On a document with one sketch it is a formality;
+                    on one with six it is the only way to tell them apart
+                    without hunting through the scene. */}
+                <select
+                  className="command-dialog__select"
+                  aria-label={`Sketch to ${featureLabel(pendingFeature.type).toLowerCase()}`}
+                  value={pendingFeature.sketchId ?? ''}
+                  onChange={(event) => {
+                    const sketchId = event.target.value
+                    setPendingFeature({ ...pendingFeature, sketchId: sketchId || null })
+                    setSelection(sketchId ? [{ kind: 'sketch', sketchId }] : EMPTY_SELECTION)
+                  }}
+                >
+                  <option value="">Choose a sketch…</option>
+                  {sketches.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.name} — {describeSupport(entry.support)}
+                    </option>
+                  ))}
+                </select>
+              </CommandDialog>
+            ) : null}
           </section>
 
           <ViewportHud
@@ -1199,12 +1585,17 @@ export function EditorView({
           activePickKey={picking?.key ?? null}
           onPickKindChange={handlePickKindChange}
           selection={selection}
-          onSelectionChange={setSelection}
+          onSelectionChange={handleSelectionChange}
           bodyName={bodyNameOf}
+          sketchName={sketchNameOf}
           sketch={activeSketch}
           drawing={drawing}
           onOpenSketch={selectSketch}
           onToggleSketchVisibility={handleToggleSketchVisibility}
+          onDeleteSketch={handleDeleteSketch}
+          canCreateSketch={selectedSupport !== null}
+          createSketchHint={createSketchHint}
+          onCreateSketch={createSketchFromSelection}
         />
       </div>
 
@@ -1227,7 +1618,7 @@ export function EditorView({
         tree={tree}
         sketches={sketches}
         selectedFeatureId={selectedFeatureId}
-        selectedSketchId={activeSketch?.id ?? null}
+        selectedSketchId={pendingFeature ? (pendingSketch?.id ?? null) : (activeSketch?.id ?? null)}
         onSelectFeature={setSelectedFeatureId}
         onSelectSketch={selectSketch}
         collapsed={timelineCollapsed}

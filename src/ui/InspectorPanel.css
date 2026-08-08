@@ -190,8 +190,29 @@
   cursor: pointer;
 }
 
-.inspector__action:hover {
+.inspector__action:hover:not(:disabled) {
   background: var(--selected-strong);
+}
+
+/* Disabled rather than hidden: the command stays where it is, and its tooltip
+   and the note under it say what it is waiting to be given. */
+.inspector__action:disabled {
+  color: var(--text-muted);
+  background: transparent;
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+
+/* Removing something is not the same shape of action as making something. */
+.inspector__action--danger {
+  background: transparent;
+  border-color: var(--border);
+}
+
+.inspector__action--danger:hover:not(:disabled) {
+  color: var(--error);
+  background: transparent;
+  border-color: var(--error);
 }
 
 /* --- Notes ---------------------------------------------------------------- */

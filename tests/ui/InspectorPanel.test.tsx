@@ -26,10 +26,15 @@ function props(overrides: Partial<InspectorPanelProps> = {}): InspectorPanelProp
     selection: [],
     onSelectionChange: vi.fn(),
     bodyName: () => undefined,
+    sketchName: () => undefined,
+    canCreateSketch: false,
+    createSketchHint: 'Select an origin plane or a planar face first',
+    onCreateSketch: vi.fn(),
     sketch: null,
     drawing: false,
     onOpenSketch: vi.fn(),
     onToggleSketchVisibility: vi.fn(),
+    onDeleteSketch: vi.fn(),
     ...overrides,
   }
 }
@@ -98,7 +103,63 @@ describe('the selection tab', () => {
     render(<InspectorPanel {...props()} />)
     await userEvent.click(screen.getByRole('tab', { name: 'Selection' }))
 
-    expect(screen.getByText(/Click a face, an edge or a body/)).toBeDefined()
+    expect(screen.getByText(/Click an origin plane, a face, an edge, a sketch or a body/)).toBeDefined()
+  })
+
+  /**
+   * The explicit half of "a click no longer creates a sketch". The command is
+   * always on screen while something is picked, so the pick-then-command shape
+   * of the workflow is visible rather than something to be discovered.
+   */
+  it('offers Create Sketch, blocked and explained, when the pick cannot carry one', async () => {
+    render(
+      <InspectorPanel
+        {...props({
+          selection: [{ kind: 'edge', bodyId: 'b1', edgeId: 'edge-2' }],
+          canCreateSketch: false,
+          createSketchHint: 'A sketch needs an origin plane or a planar face to sit on',
+        })}
+      />,
+    )
+    await userEvent.click(screen.getByRole('tab', { name: 'Selection' }))
+
+    const create = screen.getByRole('button', { name: 'Create Sketch' })
+    expect(create.hasAttribute('disabled')).toBe(true)
+    expect(create.title).toBe('A sketch needs an origin plane or a planar face to sit on')
+  })
+
+  it('runs Create Sketch when the pick is a plane, and never on its own', async () => {
+    const onCreateSketch = vi.fn()
+    render(
+      <InspectorPanel
+        {...props({
+          selection: [{ kind: 'origin-plane', plane: 'XZ' }],
+          canCreateSketch: true,
+          createSketchHint: 'Start a sketch on the XZ plane',
+          onCreateSketch,
+        })}
+      />,
+    )
+    await userEvent.click(screen.getByRole('tab', { name: 'Selection' }))
+
+    // Selecting alone did nothing; pressing the command is what acts.
+    expect(onCreateSketch).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Create Sketch' }))
+    expect(onCreateSketch).toHaveBeenCalledOnce()
+  })
+
+  it('names a picked sketch rather than showing its identifier', async () => {
+    render(
+      <InspectorPanel
+        {...props({
+          selection: [{ kind: 'sketch', sketchId: 's1' }],
+          sketchName: (id) => (id === 's1' ? 'Base profile' : undefined),
+        })}
+      />,
+    )
+    await userEvent.click(screen.getByRole('tab', { name: 'Selection' }))
+
+    expect(screen.getByText('Base profile')).toBeDefined()
   })
 
   it('lists what is picked, by name rather than by identifier', () => {
@@ -173,6 +234,15 @@ describe('the sketch tab', () => {
     // Finishing belongs to the ribbon, which carries it as its one accented
     // action. Two buttons with the same name is two decisions where there is one.
     expect(screen.queryByRole('button', { name: 'Finish Sketch' })).toBeNull()
+  })
+
+  it('offers Delete Sketch alongside Edit, so a sketch can be taken back out', async () => {
+    const onDeleteSketch = vi.fn()
+    render(<InspectorPanel {...props({ sketch: sketch(), drawing: false, onDeleteSketch })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Sketch' }))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Sketch' }))
+    expect(onDeleteSketch).toHaveBeenCalledWith('s1')
   })
 
   it('shows and hides the sketch from its own heading', async () => {

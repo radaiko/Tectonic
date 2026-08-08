@@ -56,12 +56,29 @@ export interface InspectorPanelProps {
   readonly onSelectionChange: (selection: readonly SelectionItem[]) => void
   /** How a body id reads, so a chip says "Top face of Base" and not "body-3". */
   readonly bodyName: (bodyId: string) => string | undefined
+  /** The same for a sketch, so a picked overlay reads as "Sketch 2". */
+  readonly sketchName: (sketchId: string) => string | undefined
+
+  /**
+   * Starting a sketch on what is picked.
+   *
+   * This is the explicit half of a change that took the implicit one away:
+   * clicking a face used to create a sketch on it, which meant a part could not
+   * be examined without modelling on it by accident. The click now selects, and
+   * this button — named, and disabled with a reason when it cannot run — is what
+   * turns the selection into a sketch.
+   */
+  readonly canCreateSketch: boolean
+  /** What Create Sketch would do, or what it is waiting for. */
+  readonly createSketchHint: string
+  readonly onCreateSketch: () => void
 
   readonly sketch: SketchModel | null
   /** Whether the sketch surface is the one on screen. */
   readonly drawing: boolean
   readonly onOpenSketch: (sketchId: string) => void
   readonly onToggleSketchVisibility: (sketchId: string) => void
+  readonly onDeleteSketch: (sketchId: string) => void
 }
 
 export function InspectorPanel(props: InspectorPanelProps): React.ReactElement {
@@ -130,12 +147,18 @@ function SelectionTab({
   selection,
   onSelectionChange,
   bodyName,
+  sketchName,
+  canCreateSketch,
+  createSketchHint,
+  onCreateSketch,
 }: InspectorPanelProps): React.ReactElement {
+  const names = { bodyName, sketchName }
+
   if (selection.length === 0) {
     return (
       <PanelEmpty>
-        Nothing is picked. Click a face, an edge or a body in the viewport — or a body in the
-        browser — and it will be listed here.
+        Nothing is picked. Click an origin plane, a face, an edge, a sketch or a body in the
+        viewport — or a body in the browser — and it will be listed here.
       </PanelEmpty>
     )
   }
@@ -161,19 +184,37 @@ function SelectionTab({
               type="button"
               className="inspector__chip"
               data-kind={item.kind}
-              aria-label={`Remove ${describeSelection(item, { bodyName })} from the selection`}
+              aria-label={`Remove ${describeSelection(item, names)} from the selection`}
               onClick={() =>
                 onSelectionChange(
                   selection.filter((other) => selectionKey(other) !== selectionKey(item)),
                 )
               }
             >
-              <span>{describeSelection(item, { bodyName })}</span>
+              <span>{describeSelection(item, names)}</span>
               <Icon name="close" size={12} />
             </button>
           </li>
         ))}
       </ul>
+
+      {/* What a selection is *for*, right under it. Always on screen while
+          something is picked, disabled with its reason attached when what is
+          picked cannot carry a sketch — a control that comes and goes teaches
+          nobody which picks are the useful ones. */}
+      <div className="inspector__actions">
+        <button
+          type="button"
+          className="inspector__action"
+          disabled={!canCreateSketch}
+          title={createSketchHint}
+          onClick={onCreateSketch}
+        >
+          <Icon name="sketch" size={15} />
+          Create Sketch
+        </button>
+      </div>
+      <p className="inspector__note">{createSketchHint}</p>
     </>
   )
 }
@@ -203,6 +244,7 @@ function SketchTab({
   drawing,
   onOpenSketch,
   onToggleSketchVisibility,
+  onDeleteSketch,
 }: InspectorPanelProps): React.ReactElement {
   if (!sketch) {
     return (
@@ -250,6 +292,17 @@ function SketchTab({
           >
             <Icon name="sketch" size={15} />
             Edit Sketch
+          </button>
+          {/* Removing one is the other half of being able to add one. It asks
+              first when anything is built on it — see the editor, which is the
+              only place that knows what depends on what. */}
+          <button
+            type="button"
+            className="inspector__action inspector__action--danger"
+            onClick={() => onDeleteSketch(sketch.id)}
+          >
+            <Icon name="close" size={15} />
+            Delete Sketch
           </button>
         </div>
       )}

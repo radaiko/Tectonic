@@ -45,6 +45,8 @@ export interface BrowserSketchesProps {
   readonly selectedId: string | null
   readonly onSelect: (sketchId: string) => void
   readonly onToggleVisibility: (sketchId: string) => void
+  /** Removes a sketch from the document, once its dependents have been dealt with. */
+  readonly onDelete: (sketchId: string) => void
   /** Planar faces a new sketch can be attached to. Empty until something is built. */
   readonly faceGroups: readonly PlanarFaceGroup[]
   readonly faceTarget: string
@@ -202,7 +204,19 @@ export function BrowserPanel({
                     same name for the same thing is a browser where "hide this"
                     is ambiguous — for a screen reader it is literally two
                     buttons called "Hide Sketch 1". This section groups the
-                    sketches; History is where each one is acted on. */}
+                    sketches; History is where each one is acted on.
+
+                    Delete is the exception: it has no other home in this
+                    section, and a list you can add to but not remove from is
+                    how a document fills with sketches nobody wanted. */}
+                <IconButton
+                  icon="close"
+                  size="sm"
+                  tone="danger"
+                  label={`Delete ${entry.name}`}
+                  title={`Delete ${entry.name} from the document`}
+                  onClick={() => sketches.onDelete(entry.id)}
+                />
               </li>
             ))}
           </ul>
@@ -263,6 +277,7 @@ export function BrowserPanel({
           onSelectSketch={sketches.onSelect}
           onRenameSketch={history.onRenameSketch}
           onToggleSketchVisibility={sketches.onToggleVisibility}
+          onDeleteSketch={sketches.onDelete}
           onReorder={history.onReorder}
           onReorderRefused={history.onReorderRefused}
           onToggleSuppress={history.onToggleSuppress}

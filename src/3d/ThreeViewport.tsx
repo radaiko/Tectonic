@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { MeshData } from '../domain/MeshData'
 import { toBufferGeometry } from '../kernel/StubKernel'
 import type { SketchPlane } from '../sketch/domain/SketchSupport'
+import type { SketchOverlay } from './sketchOverlay'
 import type { ModelSphere } from './framing'
 import { boundingSphere, frameBox, needsReframing } from './framing'
 import type { OriginPlaneHandles } from './originPlanes'
@@ -127,10 +128,15 @@ export interface ThreeViewportProps {
   readonly originPlanes?: readonly SketchPlane[]
   /** The plane drawn as chosen, e.g. the one the open sketch sits on. */
   readonly selectedPlane?: SketchPlane | null
-  /** A plane was clicked in the scene, or picked from the legend. */
-  readonly onSelectPlane?: (plane: SketchPlane) => void
-  /** A planar face of a body was clicked. Needs {@link bodyIds} to fire. */
-  readonly onSelectFace?: (bodyId: string, faceId: string) => void
+  /**
+   * The document's sketches, lifted onto their support planes.
+   *
+   * Drawn over the model and pickable like any other geometry. Deliberately
+   * *only* that: picking a sketch here reports a selection and nothing else.
+   * Opening one for drawing is a command a user runs by name, never a side
+   * effect of having clicked near it.
+   */
+  readonly sketchOverlays?: readonly SketchOverlay[]
   /** Names for the bodies, so a selection chip can read better than an id. */
   readonly bodyNames?: readonly string[]
   /**
@@ -196,6 +202,24 @@ const EDGE_SELECTED = 0x4ec9b0
  */
 const EDGE_PICK_TOLERANCE = 0.75
 
+/**
+ * Sketch overlays as drawn: real geometry, construction geometry, and the two
+ * states a whole sketch can be in.
+ *
+ * Construction is dimmer *and* dashed rather than only dimmer, because the
+ * distinction it carries — "this is not part of any profile" — is the one a user
+ * has to be able to read at a glance on a busy face.
+ */
+const SKETCH_LINE = 0xe8ecf1
+const SKETCH_CONSTRUCTION = 0x7d8894
+const SKETCH_SELECTED = 0x4ec9b0
+const SKETCH_HOVER = 0xf2c14e
+/** Dash geometry for construction curves, in world units. */
+const SKETCH_DASH_SIZE = 1.6
+const SKETCH_GAP_SIZE = 1.1
+/** How near the pointer has to come to a sketch curve to pick it. */
+const SKETCH_PICK_TOLERANCE = 1.2
+
 /** What the developer overlay reports about the frame that was just drawn. */
 interface FrameStats {
   readonly fps: number
@@ -224,6 +248,7 @@ const RENDERER_LABELS: Record<RendererKind, string> = { webgpu: 'WebGPU', webgl:
 
 const EMPTY_PLANES: readonly SketchPlane[] = []
 const EMPTY_NAMES: readonly string[] = []
+const EMPTY_OVERLAYS: readonly SketchOverlay[] = []
 
 /** Where the camera starts, matching the position the scene is built with. */
 const DEFAULT_ORIENTATION: CameraOrientation = orientationFor('isometric')
@@ -235,8 +260,12 @@ const DEFAULT_ORIENTATION: CameraOrientation = orientationFor('isometric')
  * by less than a pixel. A fifth of a degree is well under what the cube can show.
  */
 const ORIENTATION_EPSILON = 3e-3
-/** Faces before edges: a face is by far the easier target to hit. */
-const DEFAULT_PICKABLE: readonly SelectionKind[] = ['origin-plane', 'face', 'edge']
+/**
+ * Faces before edges: a face is by far the easier target to hit. Sketches come
+ * ahead of both, because a sketch overlay lies *on* the face it was drawn on and
+ * would otherwise be unreachable the moment it had a solid behind it.
+ */
+const DEFAULT_PICKABLE: readonly SelectionKind[] = ['origin-plane', 'sketch', 'face', 'edge']
 
 export function ThreeViewport({
   meshes,
@@ -245,8 +274,7 @@ export function ThreeViewport({
   clipPlane = null,
   originPlanes = EMPTY_PLANES,
   selectedPlane = null,
-  onSelectPlane,
-  onSelectFace,
+  sketchOverlays = EMPTY_OVERLAYS,
   bodyNames = EMPTY_NAMES,
   selection = EMPTY_SELECTION,
   onSelectionChange,
@@ -263,6 +291,13 @@ export function ThreeViewport({
   const faceSelectedGroupRef = useRef<THREE.Group | null>(null)
   const faceSelectedMaterialRef = useRef<THREE.Material | null>(null)
   const edgeHighlightGroupRef = useRef<THREE.Group | null>(null)
+  /**
+   * The sketches drawn over the model. Also the geometry a sketch pick is
+   * raycast against — unlike the body outlines, every curve here carries the id
+   * of the sketch it belongs to, so it can answer "which sketch is this".
+   */
+  const sketchGroupRef = useRef<THREE.Group | null>(null)
+  const sketchMaterialsRef = useRef<SketchMaterials | null>(null)
   /**
    * Per-body line lists used only for picking edges, kept out of the scene.
    *
@@ -320,18 +355,14 @@ export function ThreeViewport({
 
   // The pick handlers live for the lifetime of the renderer, so they reach the
   // current props through refs rather than closing over the first render's.
-  const onSelectPlaneRef = useRef(onSelectPlane)
-  const onSelectFaceRef = useRef(onSelectFace)
   const onSelectionChangeRef = useRef(onSelectionChange)
   const selectionRef = useRef(selection)
   const pickableRef = useRef(pickable)
   useEffect(() => {
-    onSelectPlaneRef.current = onSelectPlane
-    onSelectFaceRef.current = onSelectFace
     onSelectionChangeRef.current = onSelectionChange
     selectionRef.current = selection
     pickableRef.current = pickable
-  }, [onSelectFace, onSelectPlane, onSelectionChange, pickable, selection])
+  }, [onSelectionChange, pickable, selection])
 
   const [overlayVisible, setOverlayVisible] = useState(false)
   // Off by default, so the viewport keeps drawing as fast as the display allows
@@ -474,6 +505,17 @@ export function ThreeViewport({
 
     const edgePickGroup = new THREE.Group()
     edgePickGroupRef.current = edgePickGroup
+
+    // Above the model, and never depth-tested away by it: a sketch on a face
+    // sits exactly on that face, so it would otherwise fight it for the pixels
+    // it is meant to be drawn over.
+    const sketchGroup = new THREE.Group()
+    sketchGroup.renderOrder = 5
+    scene.add(sketchGroup)
+    sketchGroupRef.current = sketchGroup
+
+    const sketchMaterials = createSketchMaterials()
+    sketchMaterialsRef.current = sketchMaterials
 
     /** Wires a resolved renderer to the DOM and starts drawing. */
     const attach = ({ renderer, kind }: ActiveRenderer): (() => void) => {
@@ -717,6 +759,12 @@ export function ThreeViewport({
             continue
           }
 
+          if (kind === 'sketch') {
+            const found = pickSketch(point)
+            if (found) return found
+            continue
+          }
+
           if (kind === 'face' || kind === 'body') {
             const raycaster = new THREE.Raycaster()
             raycaster.setFromCamera(point, camera)
@@ -759,6 +807,26 @@ export function ThreeViewport({
         return null
       }
 
+      /**
+       * The sketch under the pointer.
+       *
+       * Every curve carries its sketch's id, so this is a plain raycast against
+       * what is on screen — a hidden sketch draws nothing and is therefore not
+       * pickable, which is the whole meaning of hiding one.
+       */
+      const pickSketch = (point: THREE.Vector2): HoverTarget | null => {
+        const raycaster = new THREE.Raycaster()
+        raycaster.setFromCamera(point, camera)
+        const scale = framedRef.current ? Math.max(framedRef.current.radius / 50, 0.05) : 1
+        raycaster.params.Line = { threshold: SKETCH_PICK_TOLERANCE * scale }
+
+        for (const hit of raycaster.intersectObjects(sketchGroup.children, false)) {
+          const sketchId = hit.object.userData.sketchId as unknown
+          if (typeof sketchId === 'string') return { kind: 'sketch', sketchId }
+        }
+        return null
+      }
+
       // Where the press landed, so the release can tell a click from an orbit.
       let pressedAt: { x: number; y: number } | null = null
 
@@ -784,17 +852,17 @@ export function ThreeViewport({
         const target = targetAt(event)
         updateHover(target)
 
-        // The general selection always moves, including a click on empty space,
-        // which is how a selection gets cleared.
+        // Picking is *only* picking.
+        //
+        // A click used to start a sketch on whatever it landed on, which meant
+        // there was no way to simply look at a face: examining a part, arming a
+        // selection field, or missing the thing you were aiming for all created
+        // a sketch nobody asked for. The viewport now reports what was hit and
+        // stops there; creating a sketch on it is a command with a name, run
+        // from the inspector or the ribbon. A click on empty space still clears
+        // the selection, which is what makes the report complete.
         const extend = event.shiftKey || event.ctrlKey || event.metaKey
         onSelectionChangeRef.current?.(applyPick(selectionRef.current, target, extend))
-
-        if (!target || extend) return
-        // The two direct actions stay: a plain click on a plane or a face is
-        // still "start a sketch here", which is what makes the empty document
-        // workflow one click rather than a selection plus a command.
-        if (target.kind === 'origin-plane') onSelectPlaneRef.current?.(target.plane)
-        else if (target.kind === 'face') onSelectFaceRef.current?.(target.bodyId, target.faceId)
       }
 
       const onPointerLeave = (): void => {
@@ -862,8 +930,10 @@ export function ThreeViewport({
       disposeChildren(faceSelectedGroup)
       disposeChildren(edgeHighlightGroup)
       disposeChildren(edgePickGroup)
+      disposeChildren(sketchGroup)
       faceHoverMaterial.dispose()
       faceSelectedMaterial.dispose()
+      for (const material of Object.values(sketchMaterials)) material.dispose()
       planes.dispose()
       grid.dispose()
       detach?.()
@@ -876,8 +946,62 @@ export function ThreeViewport({
       faceSelectedMaterialRef.current = null
       edgeHighlightGroupRef.current = null
       edgePickGroupRef.current = null
+      sketchGroupRef.current = null
+      sketchMaterialsRef.current = null
     }
   }, [updateHover])
+
+  /**
+   * The sketches, drawn over the model.
+   *
+   * Rebuilt when the overlays change and when what is picked or hovered changes,
+   * because which material a curve takes is part of what the pass draws. The
+   * materials themselves are shared and live with the renderer, so this only
+   * ever churns a handful of small line geometries.
+   */
+  useEffect(() => {
+    const group = sketchGroupRef.current
+    const materials = sketchMaterialsRef.current
+    if (!group || !materials) return
+    disposeChildren(group)
+
+    const selectedSketchIds = new Set(
+      selection.filter((item) => item.kind === 'sketch').map((item) => item.sketchId),
+    )
+    const hoveredSketchId = hover?.kind === 'sketch' ? hover.sketchId : null
+
+    for (const overlay of sketchOverlays) {
+      // Hidden means hidden: nothing drawn, and so nothing to pick either.
+      if (!overlay.visible) continue
+      const state =
+        overlay.sketchId === hoveredSketchId
+          ? 'hover'
+          : selectedSketchIds.has(overlay.sketchId)
+            ? 'selected'
+            : 'idle'
+
+      for (const curve of overlay.curves) {
+        const positions = new Float32Array(curve.points.length * 3)
+        curve.points.forEach((point, index) => {
+          positions[index * 3] = point.x
+          positions[index * 3 + 1] = point.y
+          positions[index * 3 + 2] = point.z
+        })
+        const geometry = new THREE.BufferGeometry()
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+
+        const line = new THREE.Line(geometry, sketchMaterialFor(materials, state, curve.construction))
+        // Dashes are measured along the curve, and a line that has never been
+        // measured draws solid.
+        if (curve.construction) line.computeLineDistances()
+        line.userData.sketchId = overlay.sketchId
+        line.userData.entityId = curve.entityId
+        group.add(line)
+      }
+    }
+
+    requestRenderRef.current()
+  }, [hover, selection, sketchOverlays])
 
   useEffect(() => {
     const modelGroup = modelGroupRef.current
@@ -1082,6 +1206,12 @@ export function ThreeViewport({
     },
     [bodyIds, bodyNames],
   )
+  /** So a picked sketch reads as "Sketch 2" rather than as its identifier. */
+  const sketchNameOf = useCallback(
+    (sketchId: string): string | undefined =>
+      sketchOverlays.find((overlay) => overlay.sketchId === sketchId)?.name,
+    [sketchOverlays],
+  )
 
   // The renderer's canvas is appended to the inner element imperatively, so it
   // is kept clear of anything React renders alongside it.
@@ -1127,18 +1257,20 @@ export function ThreeViewport({
               onPointerLeave={() => updateHover(null)}
               onFocus={() => updateHover({ kind: 'origin-plane', plane })}
               onBlur={() => updateHover(null)}
-              onClick={() => {
+              onClick={() =>
                 onSelectionChange?.(applyPick(selection, { kind: 'origin-plane', plane }, false))
-                onSelectPlane?.(plane)
-              }}
+              }
             >
               {originPlaneLabel(plane)}
             </button>
           ))}
+          {/* Says what a click does, which is select. Creating the sketch is the
+              next, named step — the legend used to promise otherwise, and a
+              stray click on a plane then cost the user a sketch. */}
           <p className="viewport__planes-hint" role="status">
             {hoveredPlane
-              ? `${originPlaneLabel(hoveredPlane)} — click to sketch on it`
-              : 'Click a plane to start a sketch'}
+              ? `${originPlaneLabel(hoveredPlane)} — click to select it, then Create Sketch`
+              : 'Click a plane to select it, then Create Sketch'}
           </p>
         </div>
       ) : null}
@@ -1168,7 +1300,9 @@ export function ThreeViewport({
                     )
                   }
                 >
-                  <span>{describeSelection(item, { bodyName: bodyNameOf })}</span>
+                  <span>
+                    {describeSelection(item, { bodyName: bodyNameOf, sketchName: sketchNameOf })}
+                  </span>
                   <span aria-hidden="true">×</span>
                   <span className="viewport__visually-hidden"> — remove from selection</span>
                 </button>
@@ -1249,13 +1383,88 @@ function edgeHighlight(
 function disposeChildren(group: THREE.Group): void {
   for (const child of [...group.children]) {
     group.remove(child)
-    if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+    // `LineSegments` and `Line` are the same class hierarchy, so this covers the
+    // body outlines, the edge highlights and the sketch overlays alike.
+    if (child instanceof THREE.Mesh || child instanceof THREE.Line) {
       child.geometry.dispose()
+      const material = child.material
       // Highlight lines make a material each — they differ only by colour, and
-      // there are never many. Shared materials are owned by whoever made them.
-      if (child instanceof THREE.LineSegments && child.material instanceof THREE.Material) {
-        if (child.material.depthTest === false) child.material.dispose()
+      // there are never many. Anything marked shared is owned by whoever made
+      // it and outlives the objects drawn with it.
+      if (
+        child instanceof THREE.Line &&
+        material instanceof THREE.Material &&
+        material.depthTest === false &&
+        material.userData.shared !== true
+      ) {
+        material.dispose()
       }
     }
   }
+}
+
+/** The six ways a sketch curve can be drawn: three states × solid or dashed. */
+interface SketchMaterials {
+  readonly idle: THREE.LineBasicMaterial
+  readonly selected: THREE.LineBasicMaterial
+  readonly hover: THREE.LineBasicMaterial
+  readonly idleConstruction: THREE.LineDashedMaterial
+  readonly selectedConstruction: THREE.LineDashedMaterial
+  readonly hoverConstruction: THREE.LineDashedMaterial
+}
+
+type SketchDrawState = 'idle' | 'selected' | 'hover'
+
+/**
+ * Materials for the sketch overlays, built once and shared by every curve.
+ *
+ * Depth testing is off throughout: a sketch drawn on a planar face is coplanar
+ * with it to the last bit, and letting the two compete for the same pixels is
+ * how an overlay ends up flickering in and out as the camera moves.
+ */
+function createSketchMaterials(): SketchMaterials {
+  const solid = (color: number, opacity: number): THREE.LineBasicMaterial => {
+    const material = new THREE.LineBasicMaterial({
+      color,
+      depthTest: false,
+      transparent: true,
+      opacity,
+    })
+    material.userData.shared = true
+    return material
+  }
+  const dashed = (color: number, opacity: number): THREE.LineDashedMaterial => {
+    const material = new THREE.LineDashedMaterial({
+      color,
+      depthTest: false,
+      transparent: true,
+      opacity,
+      dashSize: SKETCH_DASH_SIZE,
+      gapSize: SKETCH_GAP_SIZE,
+    })
+    material.userData.shared = true
+    return material
+  }
+
+  return {
+    idle: solid(SKETCH_LINE, 0.9),
+    selected: solid(SKETCH_SELECTED, 1),
+    hover: solid(SKETCH_HOVER, 1),
+    // Construction sits back: it is scaffolding, and it must not read as
+    // something the next feature is going to build from.
+    idleConstruction: dashed(SKETCH_CONSTRUCTION, 0.75),
+    selectedConstruction: dashed(SKETCH_SELECTED, 0.9),
+    hoverConstruction: dashed(SKETCH_HOVER, 0.9),
+  }
+}
+
+function sketchMaterialFor(
+  materials: SketchMaterials,
+  state: SketchDrawState,
+  construction: boolean,
+): THREE.Material {
+  if (!construction) return materials[state]
+  if (state === 'selected') return materials.selectedConstruction
+  if (state === 'hover') return materials.hoverConstruction
+  return materials.idleConstruction
 }

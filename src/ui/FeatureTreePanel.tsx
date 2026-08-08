@@ -38,6 +38,14 @@ export interface FeatureTreePanelProps {
   readonly onSelectSketch?: (sketchId: string) => void
   readonly onRenameSketch?: (sketchId: string, name: string) => void
   readonly onToggleSketchVisibility?: (sketchId: string) => void
+  /**
+   * Asked for when a sketch row's Delete is chosen.
+   *
+   * Left out, the menu has no Delete at all rather than an entry that does
+   * nothing: whether a sketch can be removed depends on what is built on it, and
+   * only the editor knows that.
+   */
+  readonly onDeleteSketch?: (sketchId: string) => void
   /** Asked for when a row is dropped somewhere the tree accepts it. */
   readonly onReorder?: (featureId: string, newIndex: number) => void
   /**
@@ -88,6 +96,7 @@ export function FeatureTreePanel({
   onSelectSketch,
   onRenameSketch,
   onToggleSketchVisibility,
+  onDeleteSketch,
   onReorder,
   onReorderRefused,
   onToggleSuppress,
@@ -249,6 +258,14 @@ export function FeatureTreePanel({
             setRenaming(menu.featureId)
             closeMenu()
           }}
+          {...(onDeleteSketch
+            ? {
+                onDelete: () => {
+                  onDeleteSketch(menu.featureId)
+                  closeMenu()
+                },
+              }
+            : {})}
         />
       ) : menu ? (
         <ContextMenu
@@ -571,15 +588,27 @@ interface SketchMenuProps {
   readonly onOpen: () => void
   readonly onToggleVisibility: () => void
   readonly onRename: () => void
+  /** Omitted when the surface holding this panel cannot delete sketches. */
+  readonly onDelete?: () => void
 }
 
-/** A sketch's actions. Deleting one is the sketch list's business, not history's. */
+/**
+ * A sketch's actions: everything a sketch can actually be — opened, shown or
+ * hidden, renamed, and removed.
+ *
+ * Delete sits here alongside the feature menu's, because the history is where a
+ * user goes to take something out of the document, and a sketch that could be
+ * added from four places and removed from none was the asymmetry that made the
+ * browser fill up with sketches nobody could get rid of. Suppress is still
+ * absent: a sketch has no build step to skip.
+ */
 function SketchMenu({
   state,
   sketch,
   onOpen,
   onToggleVisibility,
   onRename,
+  onDelete,
 }: SketchMenuProps): React.ReactElement {
   return (
     <ul
@@ -603,6 +632,13 @@ function SketchMenu({
           Rename
         </button>
       </li>
+      {onDelete ? (
+        <li>
+          <button type="button" role="menuitem" onClick={onDelete}>
+            Delete
+          </button>
+        </li>
+      ) : null}
     </ul>
   )
 }

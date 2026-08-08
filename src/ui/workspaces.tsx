@@ -54,7 +54,7 @@ const DESCRIPTIONS: Partial<Record<FeatureType, string>> = {
 }
 
 export interface ModelRibbonContext {
-  /** Whether a sketch is selected, so profile features have something to build. */
+  /** Whether the document holds a sketch, so profile features have one to ask for. */
   readonly hasSketch: boolean
   /** Whether anything has been built, so modify features have something to act on. */
   readonly hasBodies: boolean
@@ -63,6 +63,12 @@ export interface ModelRibbonContext {
   /** The backend's name, so a blocked command can say which one blocked it. */
   readonly backend: string
   readonly onFeature: (type: FeatureType) => void
+  /** Starts a sketch on whatever is selected — see {@link canCreateSketch}. */
+  readonly onCreateSketch: () => void
+  /** Whether the selection names one origin plane or one planar face. */
+  readonly canCreateSketch: boolean
+  /** What the command wants, whether or not it can run: its tooltip either way. */
+  readonly createSketchHint: string
   readonly onExport: () => void
   /** Reveals the section controls and starts a half section if none is cutting. */
   readonly onSection: () => void
@@ -183,6 +189,25 @@ function blockedGroup(
 
 const NOT_IN_EDITOR = 'not wired into this editor yet'
 
+/**
+ * Starting a sketch, as a command with a name.
+ *
+ * This is the counterpart to the viewport no longer creating one on a click: the
+ * pick says *where*, and this says *do it*. It is disabled rather than hidden
+ * when the selection cannot support a sketch, and its description says what it
+ * is waiting for — a button that vanishes teaches nobody what to select.
+ */
+function createSketchCommand(context: ModelRibbonContext): RibbonCommand {
+  return {
+    id: 'sketch:create',
+    label: 'Create Sketch',
+    icon: 'sketch',
+    description: context.createSketchHint,
+    onSelect: context.onCreateSketch,
+    disabled: !context.canCreateSketch,
+  }
+}
+
 /** The modelling ribbon: one tab per environment, groups in Fusion's order. */
 export function modelWorkspaceTabs(context: ModelRibbonContext): RibbonTab[] {
   const inspectGroup: RibbonGroup = {
@@ -235,10 +260,11 @@ export function modelWorkspaceTabs(context: ModelRibbonContext): RibbonTab[] {
       id: 'solid',
       label: 'Solid',
       groups: [
-        group(
-          'create',
-          'Create',
-          features(
+        // Create Sketch leads the Create group, which is where the work starts
+        // and where Fusion puts it too.
+        group('create', 'Create', [
+          createSketchCommand(context),
+          ...features(
             [
               FeatureType.Extrude,
               FeatureType.Revolve,
@@ -249,7 +275,7 @@ export function modelWorkspaceTabs(context: ModelRibbonContext): RibbonTab[] {
             ],
             context,
           ),
-        ),
+        ]),
         group(
           'modify',
           'Modify',
