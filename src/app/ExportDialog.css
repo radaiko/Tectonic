@@ -1,0 +1,91 @@
+.export-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 14vh 1rem 2rem;
+  background: rgb(8 11 14 / 55%);
+  backdrop-filter: blur(2px);
+}
+
+.export-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: min(460px, 100%);
+  padding: 1.25rem;
+  background: rgb(28 32 36 / 97%);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 45%);
+}
+
+.export-dialog__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.export-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.export-dialog__label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.export-dialog__select {
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--surface-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.export-dialog__select:focus-visible {
+  border-color: var(--accent);
+}
+
+.export-dialog__description {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.export-dialog__warning,
+.export-dialog__error {
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  border-radius: 6px;
+}
+
+.export-dialog__warning {
+  color: var(--text-secondary);
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+}
+
+.export-dialog__error {
+  color: var(--danger);
+  background: rgb(220 96 96 / 10%);
+  border: 1px solid rgb(220 96 96 / 35%);
+}
+
+.export-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}

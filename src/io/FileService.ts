@@ -86,6 +86,14 @@ export function validateDocument(value: unknown): TectonicDocument {
   if (candidate.sketch !== undefined && !isSketch(candidate.sketch)) {
     throw new DocumentParseError('Document "sketch" is not a sketch')
   }
+  if (candidate.sketches !== undefined) {
+    if (!Array.isArray(candidate.sketches)) {
+      throw new DocumentParseError('Document "sketches" is not an array')
+    }
+    if (!candidate.sketches.every(isSketch)) {
+      throw new DocumentParseError('Document "sketches" holds something that is not a sketch')
+    }
+  }
 
   return candidate as unknown as TectonicDocument
 }

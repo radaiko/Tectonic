@@ -11,7 +11,10 @@ export const DEFAULT_HISTORY_LIMIT = 100
 export function restoreModel(model: SketchModel, json: SketchModelJSON): void {
   const source = SketchModel.fromJSON(json)
   model.name = source.name
-  model.plane = source.plane
+  // The support, not the `plane` shorthand: assigning `plane` would rewrite a
+  // face-attached sketch as an origin-plane one, so undo would silently detach
+  // the sketch from the face it was drawn on.
+  model.support = source.support
   model.gridSpacing = source.gridSpacing
 
   model.entities.clear()

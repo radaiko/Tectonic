@@ -1,5 +1,5 @@
 import type { ExtrudeSide, ShapeHandle, Vec3 } from '../../kernel/IKernel'
-import { frameNormal, negateVec3, offsetFrame } from '../geometry/plane'
+import { frameNormal, negateVec3 } from '../geometry/plane'
 import {
   readBoolean,
   readChoice,
@@ -48,7 +48,7 @@ export async function buildExtrusion(context: OperationContext): Promise<ShapeHa
   const profiles = requireProfiles(sketch, readStringArray(params, 'profileEntityIds'))
 
   const offset = readNumber(params, 'offset', 0)
-  const plane = offsetFrame(sketchFrame(sketch), offset)
+  const plane = await sketchFrame(context, sketch, offset)
   const reverse = readBoolean(params, 'reverse', false)
   const normal = frameNormal(plane)
   const direction: Vec3 = reverse ? negateVec3(normal) : normal

@@ -31,6 +31,24 @@ export type {
   SketchExportFormat,
 } from './FileService'
 
+export {
+  EXPORT_FORMATS,
+  buildExport,
+  exportFormatInfo,
+  exportUnavailableReason,
+} from './DocumentExport'
+export type { ExportFormatInfo, ExportSource, ExportSubject } from './DocumentExport'
+
+export {
+  SESSION_SCHEMA_VERSION,
+  SESSION_STORAGE_KEY,
+  clearSession,
+  defaultSessionStorage,
+  loadSession,
+  saveSession,
+} from './DocumentStorage'
+export type { SessionStorageLike, StoredSession } from './DocumentStorage'
+
 export { ExportError, ImportError, DEFAULT_MATERIAL, unitScale } from './types'
 export type { MaterialSpec, NamedMesh, RgbColor } from './types'
 

@@ -23,9 +23,28 @@
   color: var(--text-primary);
 }
 
+/* An input rather than a label: the document title is edited in place. It is
+   styled to read as text until it is hovered or focused. */
 .editor__doc {
+  width: 16ch;
+  padding: 0.2rem 0.35rem;
+  font: inherit;
   font-size: 0.85rem;
-  color: var(--text-muted);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  outline: none;
+}
+
+.editor__doc:hover {
+  border-color: var(--border);
+}
+
+.editor__doc:focus {
+  color: var(--text-primary);
+  background: var(--surface-base);
+  border-color: var(--accent);
 }
 
 .editor__modified {
@@ -100,6 +119,81 @@
 .editor__node--part {
   color: var(--text-primary);
   font-weight: 500;
+}
+
+.editor__node--sketch {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.25rem 0.4rem;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.editor__node--sketch:hover {
+  background: var(--surface-hover);
+}
+
+.editor__node--sketch[aria-pressed='true'] {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.editor__node-detail {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.editor__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.75rem 0;
+}
+
+.editor__actions--stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.editor__actions-label {
+  width: 100%;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.editor__select {
+  width: 100%;
+  padding: 0.35rem 0.4rem;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  background: var(--surface-base);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.editor__select:focus-visible {
+  border-color: var(--accent);
+}
+
+.editor__note {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-muted);
 }
 
 .editor__empty {

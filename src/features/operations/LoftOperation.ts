@@ -25,18 +25,22 @@ export async function buildLoft(context: OperationContext): Promise<ShapeHandle>
     throw new FeatureError('A loft needs at least two section sketches')
   }
 
-  const sections: LoftSection[] = sketchIds.map((sketchId) => {
+  const sections: LoftSection[] = []
+  for (const sketchId of sketchIds) {
     const sketch = requireSketch(context, sketchId)
-    return { profile: requireProfiles(sketch)[0] as LoftSection['profile'], plane: sketchFrame(sketch) }
-  })
-
-  const guides: Vec3[][] = readStringArray(params, 'guideSketchIds')
-    .map((sketchId) => {
-      const sketch = requireSketch(context, sketchId)
-      const frame = sketchFrame(sketch)
-      return sketchPath(sketch).map((point) => toWorld(frame, point))
+    sections.push({
+      profile: requireProfiles(sketch)[0] as LoftSection['profile'],
+      plane: await sketchFrame(context, sketch),
     })
-    .filter((guide) => guide.length >= 2)
+  }
+
+  const guides: Vec3[][] = []
+  for (const sketchId of readStringArray(params, 'guideSketchIds')) {
+    const sketch = requireSketch(context, sketchId)
+    const frame = await sketchFrame(context, sketch)
+    const guide = sketchPath(sketch).map((point) => toWorld(frame, point))
+    if (guide.length >= 2) guides.push(guide)
+  }
 
   return context.kernel.loft({
     sections,

@@ -1,33 +1,15 @@
 import type { NewDocumentOptions, TectonicDocument } from '../domain/Document'
-import { createBody, createPart } from '../domain/Document'
-import type { IKernel } from '../kernel/IKernel'
 import { createNewDocument } from '../io/FileService'
 
-/** Edge length of the M0 placeholder solid, in document units (mm). */
-const TEST_BOX_SIZE = 60
-
 /**
- * Builds the document a "New Document" click lands in: a single part holding one
- * kernel-generated box, so the viewport and the .tectonic round-trip both have
- * real geometry to work with during M0.
+ * Builds the document a "New Document" click lands in.
+ *
+ * Nothing is modelled up front: no parts, no bodies, no history. What the user
+ * gets is an empty sketch on the XY plane and an empty viewport, so the first
+ * solid in the document is one they asked for. The placeholder box this used to
+ * seed was an M0 scaffold for proving the viewport and the file round-trip, and
+ * both are now covered by real modelling.
  */
-export async function createStarterDocument(
-  kernel: IKernel,
-  options: NewDocumentOptions = {},
-): Promise<TectonicDocument> {
-  const document = createNewDocument(options)
-
-  const shape = await kernel.createBox({
-    width: TEST_BOX_SIZE,
-    height: TEST_BOX_SIZE,
-    depth: TEST_BOX_SIZE,
-    center: { x: 0, y: TEST_BOX_SIZE / 2, z: 0 },
-  })
-  const mesh = await kernel.triangulate(shape)
-  kernel.dispose(shape)
-
-  return {
-    ...document,
-    parts: [createPart('part-1', 'Part 1', [createBody('body-1', 'Box 1', mesh)])],
-  }
+export function createStarterDocument(options: NewDocumentOptions = {}): TectonicDocument {
+  return createNewDocument(options)
 }

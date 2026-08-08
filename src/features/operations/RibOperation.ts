@@ -1,5 +1,5 @@
 import type { ShapeHandle, Vec3 } from '../../kernel/IKernel'
-import { frameNormal, negateVec3, offsetFrame } from '../geometry/plane'
+import { frameNormal, negateVec3 } from '../geometry/plane'
 import { sketchPath, thickenPath } from '../geometry/profile'
 import { readBoolean, readNumber, readStringArray } from '../domain/parameters'
 import {
@@ -41,7 +41,7 @@ async function buildRib(context: OperationContext): Promise<ShapeHandle> {
   if (!profile) throw new FeatureError('The rib curve is too short to thicken')
 
   const bothSides = readBoolean(params, 'bothSides', false)
-  const plane = offsetFrame(sketchFrame(sketch), readNumber(params, 'offset', 0))
+  const plane = await sketchFrame(context, sketch, readNumber(params, 'offset', 0))
   const reverse = readBoolean(params, 'reverse', true)
   const normal = frameNormal(plane)
   const direction: Vec3 = reverse ? negateVec3(normal) : normal

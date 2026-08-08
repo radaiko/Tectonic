@@ -36,7 +36,7 @@ export async function buildSweep(context: OperationContext): Promise<ShapeHandle
     throw new FeatureError(`Sketch "${pathSketch.name}" has no curve for the sweep to follow`)
   }
 
-  const pathFrame = sketchFrame(pathSketch)
+  const pathFrame = await sketchFrame(context, pathSketch)
   const worldPath: Vec3[] = path.map((point) => toWorld(pathFrame, point))
   const orientation = readChoice(
     params,
@@ -45,13 +45,14 @@ export async function buildSweep(context: OperationContext): Promise<ShapeHandle
     'follow-path',
   ) as SweepOrientation
 
+  const profileFrame = await sketchFrame(context, sketch)
   const shapes: ShapeHandle[] = []
   for (const profile of profiles) {
     shapes.push(
       await kernel.sweep({
         profile,
         path: worldPath,
-        plane: sketchFrame(sketch),
+        plane: profileFrame,
         orientation,
         twistAngle: readNumber(params, 'twistAngle', 0),
       }),

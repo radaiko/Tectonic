@@ -2,17 +2,26 @@ import type { Constraint, ConstraintJSON } from './Constraint'
 import { constraintFromJSON, isDimensional } from './Constraint'
 import type { EntityType, PointEntity, SketchEntity, SketchEntityJSON } from './SketchEntity'
 import { entityFromJSON, isPoint } from './SketchEntity'
+import type { SketchPlane, SketchSupport, SketchSupportJSON } from './SketchSupport'
+import { isOriginPlaneSupport, originPlaneSupport, supportFromJSON } from './SketchSupport'
 import { newId } from './ids'
 
-/** Sketch plane reference. Only the three base planes exist in M1. */
-export type SketchPlane = 'XY' | 'XZ' | 'YZ'
+/** Re-exported so the many callers that only need the base planes keep working. */
+export type { SketchPlane } from './SketchSupport'
 
 export const DEFAULT_GRID_SPACING = 10
 
 export interface SketchModelJSON {
   readonly id: string
   readonly name: string
+  /**
+   * The base plane this sketch sits on. Written for every sketch so a build
+   * that predates {@link support} still opens the file; a face-attached sketch
+   * degrades to XY there rather than disappearing.
+   */
   readonly plane: SketchPlane
+  /** What the sketch is attached to. Absent in files written before M2. */
+  readonly support?: SketchSupportJSON
   readonly gridSpacing: number
   readonly entities: readonly SketchEntityJSON[]
   readonly constraints: readonly ConstraintJSON[]
@@ -21,7 +30,9 @@ export interface SketchModelJSON {
 export interface SketchModelInit {
   readonly id?: string
   readonly name?: string
+  /** Shorthand for an origin-plane support. Ignored when `support` is given. */
   readonly plane?: SketchPlane
+  readonly support?: SketchSupport
   readonly gridSpacing?: number
 }
 
@@ -32,7 +43,8 @@ export interface SketchModelInit {
 export class SketchModel {
   readonly id: string
   name: string
-  plane: SketchPlane
+  /** What the sketch is attached to. The single source of truth for its plane. */
+  support: SketchSupport
   gridSpacing: number
   readonly entities: Map<string, SketchEntity>
   readonly constraints: Map<string, Constraint>
@@ -40,10 +52,24 @@ export class SketchModel {
   constructor(init: SketchModelInit = {}) {
     this.id = init.id ?? newId()
     this.name = init.name ?? 'Sketch'
-    this.plane = init.plane ?? 'XY'
+    this.support = init.support ?? originPlaneSupport(init.plane ?? 'XY')
     this.gridSpacing = init.gridSpacing ?? DEFAULT_GRID_SPACING
     this.entities = new Map()
     this.constraints = new Map()
+  }
+
+  /**
+   * The base plane the sketch sits on, for the many callers that only deal in
+   * origin planes. A face-attached sketch reports XY, which is a placeholder
+   * and not where it lives — anything that has to be right about a face sketch
+   * must resolve {@link support} instead.
+   */
+  get plane(): SketchPlane {
+    return isOriginPlaneSupport(this.support) ? this.support.plane : 'XY'
+  }
+
+  set plane(plane: SketchPlane) {
+    this.support = originPlaneSupport(plane, this.support.offset)
   }
 
   addEntity<T extends SketchEntity>(entity: T): T {
@@ -141,6 +167,7 @@ export class SketchModel {
       id: this.id,
       name: this.name,
       plane: this.plane,
+      support: this.support,
       gridSpacing: this.gridSpacing,
       entities: [...this.entities.values()].map((entity) => entity.toJSON()),
       constraints: [...this.constraints.values()].map((constraint) => constraint.toJSON()),
@@ -151,7 +178,8 @@ export class SketchModel {
     const model = new SketchModel({
       id: json.id,
       name: json.name,
-      plane: json.plane,
+      // `support` wins; `plane` is what a pre-M2 file carries instead.
+      support: supportFromJSON(json.support ?? { kind: 'origin-plane', plane: json.plane }),
       gridSpacing: json.gridSpacing,
     })
     for (const entity of json.entities) model.entities.set(entity.id, entityFromJSON(entity))

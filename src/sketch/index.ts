@@ -3,6 +3,7 @@ export type { SketchEditorProps } from './SketchEditor'
 
 export { SketchModel, DEFAULT_GRID_SPACING } from './domain/SketchModel'
 export type { SketchModelJSON, SketchModelInit, SketchPlane } from './domain/SketchModel'
+export * from './domain/SketchSupport'
 export * from './domain/SketchEntity'
 export * from './domain/Constraint'
 export * from './domain/builders'

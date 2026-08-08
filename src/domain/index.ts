@@ -15,8 +15,12 @@ export {
   createBody,
   createDocument,
   createPart,
+  createSketchOn,
   documentSketch,
+  documentSketches,
+  nextSketchName,
   withSketch,
+  withSketches,
 } from './Document'
 export type { MeshData } from './MeshData'
 export { createEmptyMesh, triangleCount, vertexCount } from './MeshData'

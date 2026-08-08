@@ -1,7 +1,8 @@
 import type { PlaneFrame, Profile, ShapeHandle, Vec3 } from '../../kernel/IKernel'
 import { KernelError } from '../../kernel/IKernel'
 import type { SketchModel, SketchPlane } from '../../sketch/domain/SketchModel'
-import { planeFrame } from '../geometry/plane'
+import { offsetFrame, planeFrame } from '../geometry/plane'
+import { SupportResolutionError, resolveSupportFrame } from '../geometry/supportFrame'
 import { sketchProfiles } from '../geometry/profile'
 import { readChoice, readNumber, readOptionalString, readStringArray } from '../domain/parameters'
 import type { BooleanOperation } from '../domain/schema'
@@ -30,8 +31,32 @@ export function requireProfiles(
   return profiles
 }
 
-export function sketchFrame(sketch: SketchModel, offset = 0): PlaneFrame {
-  return planeFrame(sketch.plane, offset)
+/**
+ * The world plane a sketch sits on, resolved against the part as it stands at
+ * this point in the history.
+ *
+ * A sketch on a base plane needs nothing from the part; one attached to a face
+ * is placed by reading that face off the solid the working set currently holds,
+ * which is why this is async and takes the context rather than the sketch alone.
+ */
+export async function sketchFrame(
+  context: OperationContext,
+  sketch: SketchModel,
+  offset = 0,
+): Promise<PlaneFrame> {
+  const solids = context.solids
+  try {
+    return offsetFrame(
+      await resolveSupportFrame(sketch.support, {
+        kernel: context.kernel,
+        shapeOf: (bodyId) => solids.find((solid) => solid.id === bodyId)?.shape,
+      }),
+      offset,
+    )
+  } catch (cause) {
+    if (cause instanceof SupportResolutionError) throw new FeatureError(cause.message)
+    throw cause
+  }
 }
 
 /** Solids a modifying feature applies to: its explicit targets, or everything. */

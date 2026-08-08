@@ -23,6 +23,12 @@ export * from './domain/schema'
 export * from './geometry/plane'
 export * from './geometry/profile'
 export * from './geometry/ReferenceGeometry'
+export {
+  SupportResolutionError,
+  resolveSupportFrame,
+  staticSupportFrame,
+} from './geometry/supportFrame'
+export type { SupportContext } from './geometry/supportFrame'
 
 export { featureOperation } from './operations/registry'
 export { FeatureError } from './operations/types'

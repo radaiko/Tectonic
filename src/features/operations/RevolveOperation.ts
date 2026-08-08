@@ -33,7 +33,7 @@ export async function buildRevolution(context: OperationContext): Promise<ShapeH
   if (angle === 0) throw new FeatureError('A revolve needs a non-zero angle')
 
   const axis = resolveAxis(sketch, params)
-  const plane = sketchFrame(sketch)
+  const plane = await sketchFrame(context, sketch)
   const symmetric = readBoolean(params, 'symmetric', false)
 
   const shapes: ShapeHandle[] = []

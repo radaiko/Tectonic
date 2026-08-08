@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { ThreeViewport } from '../3d/ThreeViewport'
 import type { MeshData } from '../domain/MeshData'
 import type { Body, TectonicDocument } from '../domain/Document'
 import {
   countBodies,
+  createSketchOn,
   documentFeatureTree,
-  documentSketch,
+  documentSketches,
+  nextSketchName,
   withFeatureTree,
-  withSketch,
+  withSketches,
 } from '../domain/Document'
 import { triangleCount } from '../domain/MeshData'
 import { FeatureEngine } from '../features/FeatureEngine'
@@ -24,6 +26,8 @@ import type { FeatureParameters } from '../features/domain/parameters'
 import { createFeature, nextFeatureName } from '../features/domain/factory'
 import { StubKernel } from '../kernel/StubKernel'
 import { SketchEditor } from '../sketch/SketchEditor'
+import type { SketchPlane } from '../sketch/domain/SketchSupport'
+import { ORIGIN_PLANES, describeSupport, faceSupport, originPlaneSupport } from '../sketch/domain/SketchSupport'
 import type { ToolId } from '../sketch/tools/SketchTool'
 import { SKETCH_TOOLS } from '../sketch/tools/registry'
 import { Button } from '../ui/Button'
@@ -31,6 +35,8 @@ import type { Command } from '../ui/commands'
 import { FeaturePropertiesPanel } from '../ui/FeaturePropertiesPanel'
 import type { ComputedValue } from '../ui/FeaturePropertiesPanel'
 import { FeatureTreePanel } from '../ui/FeatureTreePanel'
+import { ExportDialog } from './ExportDialog'
+import { parseFaceTarget, planarFaceGroups } from './planarFaces'
 import './EditorView.css'
 
 /**
@@ -51,9 +57,29 @@ export type EditorSurface = 'sketch' | 'model'
 
 export interface EditorViewProps {
   readonly document: TectonicDocument
-  /** Receives the document with the current sketch folded back into it. */
+  /** Receives the document with the live sketches and history folded back in. */
   readonly onSave: (document: TectonicDocument) => void
   readonly onClose: () => void
+  /**
+   * Starts a new document, after the shell has warned about anything unsaved.
+   * Omitted when the editor is rendered without a shell around it, and the
+   * header then leaves the button out rather than offering a dead one.
+   */
+  readonly onNewDocument?: () => void
+  /**
+   * Whether the document already carries edits that were never written to a
+   * file — true for a session restored after a crash. Read once, as the
+   * editor mounts: from then on the editor owns the flag, and the shell gives
+   * a different document its own editor (by key) rather than pushing one in.
+   */
+  readonly initiallyUnsaved?: boolean
+  /**
+   * Mirrors the document out to the shell after every edit, along with whether
+   * it still has changes that have not been written to a file. This is what
+   * backs the unsaved-changes guard and the crash-recovery copy, so the shell
+   * never has to guess at what the editor is holding.
+   */
+  readonly onDocumentChange?: (document: TectonicDocument, dirty: boolean) => void
   /**
    * Publishes what the editor can do to the shell's command palette. Called
    * again whenever the list changes, and with nothing left on unmount.
@@ -65,30 +91,51 @@ export function EditorView({
   document,
   onSave,
   onClose,
+  onNewDocument,
+  initiallyUnsaved = false,
+  onDocumentChange,
   onCommandsChange,
 }: EditorViewProps): React.ReactElement {
   // Mutable and long-lived: the panels edit these models in place, and a
   // revision counter — not a new object — is what tells React to redraw.
-  const sketch = useMemo(() => documentSketch(document), [document])
-  const tree = useMemo(() => documentFeatureTree(document), [document])
+  //
+  // They are built once, from the document this editor was opened with, and a
+  // `useState` initializer is what guarantees that: the shell replaces the
+  // editor (by key) when a different document is loaded, so re-deriving them
+  // from a later prop could only throw away edits in progress.
+  const [sketches] = useState(() => documentSketches(document))
+  const [tree] = useState(() => documentFeatureTree(document))
   const kernel = useMemo(() => new StubKernel(), [])
   const engine = useMemo(() => new FeatureEngine(kernel), [kernel])
 
   const [revision, bumpRevision] = useReducer((count: number) => count + 1, 0)
   const [surface, setSurface] = useState<EditorSurface>('sketch')
-  const [modified, setModified] = useState(false)
+  // A restored document arrives already modified, and saying so is what makes
+  // the header honest and the shell's discard guard fire on the first close.
+  const [modified, setModified] = useState(initiallyUnsaved)
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null)
   const [evaluation, setEvaluation] = useState<FeatureEvaluation | null>(null)
+  // The document title, edited in the header. Kept here rather than read
+  // straight off the prop because the prop is the document as it was opened.
+  const [name, setName] = useState(document.metadata.name)
+  // Which sketch the sketch surface is editing and which one a new profile
+  // feature will consume. Falls back to the first when the selection is stale.
+  const [selectedSketchId, setSelectedSketchId] = useState<string | null>(null)
   // Held here rather than inside the sketch editor so the palette can switch
   // tools without the sketch having to be on screen already.
   const [sketchTool, setSketchTool] = useState<ToolId>('select')
+  const [exportOpen, setExportOpen] = useState(false)
+  const [faceTarget, setFaceTarget] = useState<string>('')
+
+  const activeSketch =
+    sketches.find((entry) => entry.id === selectedSketchId) ?? sketches[0] ?? null
 
   // Every edit to the tree or its parameters ends here: one rebuild, whose
   // result is dropped when a newer one has already started.
   useEffect(() => {
     let current = true
     void engine
-      .evaluate(tree, [sketch])
+      .evaluate(tree, sketches)
       .then((result) => {
         if (current) setEvaluation(result)
       })
@@ -98,20 +145,27 @@ export function EditorView({
     return () => {
       current = false
     }
-  }, [engine, revision, sketch, tree])
+  }, [engine, revision, sketches, tree])
 
-  const modelledBodies: readonly Body[] = evaluation?.bodies ?? []
-  const meshes: MeshData[] = useMemo(
-    () => [
-      ...document.parts.flatMap((part) => part.bodies.map((body) => body.mesh)),
-      ...modelledBodies.map((body) => body.mesh),
-    ],
-    [document, modelledBodies],
+  // Memoised so the "no bodies yet" case does not hand out a fresh array on
+  // every render, which would re-derive the meshes and the face list each time.
+  const modelledBodies: readonly Body[] = useMemo(() => evaluation?.bodies ?? [], [evaluation])
+  const staticBodies: readonly Body[] = useMemo(
+    () => document.parts.flatMap((part) => part.bodies),
+    [document],
   )
+  const allBodies: readonly Body[] = useMemo(
+    () => [...staticBodies, ...modelledBodies],
+    [modelledBodies, staticBodies],
+  )
+  const meshes: MeshData[] = useMemo(() => allBodies.map((body) => body.mesh), [allBodies])
   const triangles = useMemo(
     () => meshes.reduce((total, mesh) => total + triangleCount(mesh), 0),
     [meshes],
   )
+
+  /** Faces a new sketch can be attached to. Empty until something is built. */
+  const faceGroups = useMemo(() => planarFaceGroups(allBodies), [allBodies])
 
   const selectedFeature = selectedFeatureId ? (tree.getFeature(selectedFeatureId) ?? null) : null
   const computed = useMemo<ComputedValue[]>(
@@ -119,35 +173,116 @@ export function EditorView({
     [evaluation, selectedFeatureId],
   )
 
-  /** Records an edit to the model: mark dirty and schedule a rebuild. */
+  /**
+   * The document as it currently stands: the opened file, restamped with the
+   * title, the live sketches and the live history. This is what gets saved,
+   * exported and mirrored to the shell, so all three see exactly one model.
+   */
+  const compose = useCallback(
+    (title: string = name): TectonicDocument =>
+      withFeatureTree(
+        withSketches({ ...document, metadata: { ...document.metadata, name: title } }, sketches),
+        tree,
+      ),
+    [document, name, sketches, tree],
+  )
+
+  /** Records an edit to the model: mark dirty, rebuild, and tell the shell. */
   const touch = useCallback(() => {
     setModified(true)
     bumpRevision()
-  }, [])
+    onDocumentChange?.(compose(), true)
+  }, [compose, onDocumentChange])
+
+  // The shell needs a copy of the document even if nothing is ever edited, so
+  // a reload right after opening it still has something to recover. Guarded by
+  // a ref rather than an empty dependency list, which would go stale.
+  //
+  // It reports the flag the editor was opened with, not a flat `false`: a
+  // restored session arrives dirty, and announcing it clean here would tell the
+  // shell to drop its discard guard before the first edit.
+  const announced = useRef(false)
+  useEffect(() => {
+    if (announced.current) return
+    announced.current = true
+    onDocumentChange?.(compose(), initiallyUnsaved)
+  }, [compose, initiallyUnsaved, onDocumentChange])
 
   const handleSave = useCallback(() => {
-    onSave(withFeatureTree(withSketch(document, sketch), tree))
+    const saved = compose()
+    onSave(saved)
     setModified(false)
-  }, [document, onSave, sketch, tree])
+    onDocumentChange?.(saved, false)
+  }, [compose, onDocumentChange, onSave])
+
+  const handleRenameDocument = useCallback(
+    (title: string) => {
+      setName(title)
+      setModified(true)
+      // Composed with the new title explicitly: `compose`'s default still
+      // closes over the previous render's state at this point.
+      onDocumentChange?.(compose(title), true)
+    },
+    [compose, onDocumentChange],
+  )
 
   /**
    * Appends a feature of the given kind and shows it. Kinds that consume a
-   * profile are pointed at the sketch being edited; the rest work off whatever
-   * the tree has built so far.
+   * profile are pointed at the selected sketch — not at an implicit singleton —
+   * so which sketch gets built is the one the user picked. The rest work off
+   * whatever the tree has built so far.
    */
   const addFeature = useCallback(
     (type: FeatureType) => {
       const feature = createFeature(type, {
         name: nextFeatureName(type, tree.features),
-        sketchId: isSketchFeature(type) ? sketch.id : null,
+        sketchId: isSketchFeature(type) ? (activeSketch?.id ?? null) : null,
       })
       tree.addFeature(feature)
       setSelectedFeatureId(feature.id)
       setSurface('model')
       touch()
     },
-    [sketch, touch, tree],
+    [activeSketch, touch, tree],
   )
+
+  /** Adds an empty sketch on a base plane and opens it for drawing. */
+  const addSketch = useCallback(
+    (plane: SketchPlane) => {
+      const sketch = createSketchOn(originPlaneSupport(plane), nextSketchName(sketches))
+      sketches.push(sketch)
+      setSelectedSketchId(sketch.id)
+      setSurface('sketch')
+      touch()
+    },
+    [sketches, touch],
+  )
+
+  /**
+   * Adds a sketch attached to a face of a built solid. The reference is the
+   * body and face id, so a rebuild places the sketch from the face's own
+   * geometry rather than from wherever it happened to be when it was created.
+   */
+  const addFaceSketch = useCallback(
+    (target: string) => {
+      const face = parseFaceTarget(target)
+      if (!face) return
+      const sketch = createSketchOn(
+        faceSupport(face.bodyId, face.faceId),
+        nextSketchName(sketches),
+      )
+      sketches.push(sketch)
+      setSelectedSketchId(sketch.id)
+      setSurface('sketch')
+      touch()
+    },
+    [sketches, touch],
+  )
+
+  const selectSketch = useCallback((sketchId: string) => {
+    setSelectedSketchId(sketchId)
+    setSurface('sketch')
+  }, [])
 
   const handleExtrude = useCallback(() => addFeature(FeatureType.Extrude), [addFeature])
 
@@ -185,8 +320,8 @@ export function EditorView({
   )
 
   const handleRename = useCallback(
-    (featureId: string, name: string) => {
-      if (tree.renameFeature(featureId, name)) touch()
+    (featureId: string, featureName: string) => {
+      if (tree.renameFeature(featureId, featureName)) touch()
     },
     [touch, tree],
   )
@@ -215,7 +350,14 @@ export function EditorView({
 
   const commands = useMemo<readonly Command[]>(
     () => [
-      { id: 'file:save', title: 'Save / Export', category: 'File', shortcut: 'Ctrl+S', run: handleSave },
+      { id: 'file:save', title: 'Save Document', category: 'File', shortcut: 'Ctrl+S', run: handleSave },
+      {
+        id: 'file:export',
+        title: 'Export As…',
+        category: 'File',
+        shortcut: 'Ctrl+E',
+        run: () => setExportOpen(true),
+      },
       { id: 'file:close', title: 'Close Document', category: 'File', run: onClose },
       {
         id: 'view:sketch',
@@ -224,6 +366,12 @@ export function EditorView({
         run: () => setSurface('sketch'),
       },
       { id: 'view:model', title: 'Show 3D Surface', category: 'View', run: () => setSurface('model') },
+      ...ORIGIN_PLANES.map((plane) => ({
+        id: `sketch:new:${plane}`,
+        title: `New Sketch on ${plane}`,
+        category: 'Sketch',
+        run: () => addSketch(plane),
+      })),
       ...SKETCH_TOOLS.map((definition) => ({
         id: `sketch:${definition.id}`,
         title: `${definition.label} Tool`,
@@ -245,7 +393,7 @@ export function EditorView({
         run: () => addFeature(type),
       })),
     ],
-    [addFeature, handleSave, onClose, showSketchTool],
+    [addFeature, addSketch, handleSave, onClose, showSketchTool],
   )
 
   useEffect(() => {
@@ -262,9 +410,13 @@ export function EditorView({
       }
 
       if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey) {
-        if (event.key.toLowerCase() === 's') {
+        const key = event.key.toLowerCase()
+        if (key === 's') {
           event.preventDefault()
           handleSave()
+        } else if (key === 'e') {
+          event.preventDefault()
+          setExportOpen(true)
         }
         return
       }
@@ -298,11 +450,16 @@ export function EditorView({
     <div className="editor">
       <header className="editor__bar">
         <span className="editor__brand">Tectonic</span>
-        <span className="editor__doc">{document.metadata.name}</span>
+        <input
+          className="editor__doc"
+          aria-label="Document name"
+          value={name}
+          onChange={(event) => handleRenameDocument(event.target.value)}
+        />
         <span className="editor__modified">{modified ? 'Modified' : 'Saved'}</span>
         <div className="editor__spacer" />
         {surface === 'sketch' ? (
-          <Button variant="primary" onClick={handleExtrude}>
+          <Button variant="primary" onClick={handleExtrude} disabled={activeSketch === null}>
             Extrude
           </Button>
         ) : null}
@@ -322,7 +479,13 @@ export function EditorView({
             3D
           </Button>
         </div>
+        {onNewDocument ? (
+          <Button variant="ghost" onClick={onNewDocument}>
+            New Document
+          </Button>
+        ) : null}
         <Button onClick={handleSave}>Save</Button>
+        <Button onClick={() => setExportOpen(true)}>Export</Button>
         <Button variant="ghost" onClick={onClose}>
           Close
         </Button>
@@ -343,6 +506,68 @@ export function EditorView({
             />
           ) : (
             <>
+              <h2 className="editor__panel-title">Sketches</h2>
+              {sketches.length === 0 ? (
+                <p className="editor__empty">No sketches yet.</p>
+              ) : (
+                <ul className="editor__tree" aria-label="Sketches">
+                  {sketches.map((entry) => (
+                    <li key={entry.id}>
+                      <button
+                        type="button"
+                        className="editor__node editor__node--sketch"
+                        aria-pressed={entry.id === activeSketch?.id}
+                        onClick={() => selectSketch(entry.id)}
+                      >
+                        <span>{entry.name}</span>
+                        <span className="editor__node-detail">{describeSupport(entry.support)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="editor__actions" role="group" aria-label="New sketch on plane">
+                <span className="editor__actions-label">New sketch on</span>
+                {ORIGIN_PLANES.map((plane) => (
+                  <Button key={plane} onClick={() => addSketch(plane)}>
+                    {plane}
+                  </Button>
+                ))}
+              </div>
+
+              <div className="editor__actions editor__actions--stacked">
+                <span className="editor__actions-label">New sketch on a face</span>
+                {faceGroups.length === 0 ? (
+                  <p className="editor__note">
+                    No solid has been built yet, so there is no face to sketch on.
+                  </p>
+                ) : (
+                  <>
+                    <select
+                      className="editor__select"
+                      aria-label="Face to sketch on"
+                      value={faceTarget}
+                      onChange={(event) => setFaceTarget(event.target.value)}
+                    >
+                      <option value="">Choose a face…</option>
+                      {faceGroups.map((group) => (
+                        <optgroup key={group.bodyId} label={group.bodyName}>
+                          {group.faces.map((face) => (
+                            <option key={face.faceId} value={face.value}>
+                              {face.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    <Button disabled={faceTarget === ''} onClick={() => addFaceSketch(faceTarget)}>
+                      Add face sketch
+                    </Button>
+                  </>
+                )}
+              </div>
+
               <h2 className="editor__panel-title">Parts</h2>
               {document.parts.length === 0 ? (
                 <p className="editor__empty">No parts yet.</p>
@@ -369,13 +594,19 @@ export function EditorView({
         {/* Both surfaces stay mounted so switching keeps their state and the
             3D viewport does not have to rebuild its scene. */}
         <section className="editor__viewport" hidden={surface !== 'sketch'}>
-          <SketchEditor
-            model={sketch}
-            onChange={touch}
-            tool={sketchTool}
-            onToolChange={setSketchTool}
-            active={surface === 'sketch'}
-          />
+          {activeSketch ? (
+            <SketchEditor
+              model={activeSketch}
+              onChange={touch}
+              tool={sketchTool}
+              onToolChange={setSketchTool}
+              active={surface === 'sketch'}
+            />
+          ) : (
+            <p className="editor__empty">
+              This document has no sketches. Add one from the panel to start drawing.
+            </p>
+          )}
         </section>
         <section className="editor__viewport" hidden={surface !== 'model'}>
           <ThreeViewport meshes={meshes} active={surface === 'model'} />
@@ -401,6 +632,17 @@ export function EditorView({
           </span>
         ) : null}
       </footer>
+
+      {/* Mounted only while it is on screen. Its source is the document as it
+          stands right now, and composing that means serialising every sketch —
+          not something to repeat on each pointer move. */}
+      {exportOpen ? (
+        <ExportDialog
+          open
+          source={{ document: compose(), bodies: allBodies, sketch: activeSketch }}
+          onClose={() => setExportOpen(false)}
+        />
+      ) : null}
     </div>
   )
 }

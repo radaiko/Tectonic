@@ -35,7 +35,7 @@ export const holeOperation: FeatureOperation = async (context) => {
   const diameter = readNumber(params, 'diameter', 6)
   if (!(diameter > 0)) throw new FeatureError('A hole needs a positive diameter')
 
-  const frame = sketchFrame(sketch)
+  const frame = await sketchFrame(context, sketch)
   // Holes drill into the material, i.e. against the sketch plane's normal,
   // unless the feature names a direction of its own.
   const fallback = negateVec3(frameNormal(frame))
