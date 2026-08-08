@@ -7,6 +7,7 @@ import {
   setSectionMode,
   setSectionOffset,
 } from '../view/section'
+import { Icon } from './Icon'
 import './SectionControls.css'
 
 /**
@@ -48,9 +49,10 @@ export function SectionControls({
   const axes = sectionAxes(section.mode)
 
   return (
-    <section className="section">
-      <h2 className="section__title">Section</h2>
-
+    // No heading of its own: this is rendered inside a browser section already
+    // called Section, and the caller that is not the browser wants the controls,
+    // not a second title for them.
+    <div className="section">
       <select
         className="section__mode"
         aria-label="Section mode"
@@ -87,10 +89,10 @@ export function SectionControls({
             aria-label={`Flip ${axis.toUpperCase()} section`}
             onClick={() => onChange(flipSectionAxis(section, axis))}
           >
-            ⇄
+            <Icon name="mirror" size={13} />
           </button>
         </div>
       ))}
-    </section>
+    </div>
   )
 }

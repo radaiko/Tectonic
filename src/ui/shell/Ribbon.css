@@ -1,0 +1,148 @@
+.ribbon {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+/* --- Workspace tabs ------------------------------------------------------ */
+
+.ribbon__tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  height: var(--ribbon-tabs-height);
+  padding: 0 var(--space-2);
+  background: var(--app-bg);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ribbon__tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.ribbon__tab {
+  flex: none;
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--text-muted);
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color 90ms ease,
+    background 90ms ease;
+}
+
+.ribbon__tab:hover {
+  color: var(--text-secondary);
+  background: var(--hover);
+}
+
+.ribbon__tab--active {
+  color: var(--text);
+  background: var(--panel);
+  border-bottom-color: var(--accent);
+}
+
+/* --- Command row --------------------------------------------------------- */
+
+.ribbon__row {
+  display: flex;
+  align-items: stretch;
+  min-height: var(--ribbon-height);
+  padding: 0 var(--space-2);
+}
+
+.ribbon__row:focus {
+  outline: none;
+}
+
+/* Scrolls when a tab holds more groups than the window has room for. The mask
+   fades the last few pixels so a clipped group reads as "there is more this
+   way" rather than as a rendering fault. */
+.ribbon__groups {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent 100%);
+}
+
+.ribbon__groups::-webkit-scrollbar {
+  display: none;
+}
+
+/* The separator between groups is a hairline rather than a gap: it is what
+   makes "these six commands belong together" legible without spending 24px of
+   a 66px band on emptiness. */
+.ribbon__group {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: none;
+  padding: var(--space-1) var(--space-2) 2px;
+  border-right: 1px solid var(--divider);
+}
+
+.ribbon__group:last-child {
+  border-right: none;
+}
+
+.ribbon__commands {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+}
+
+.ribbon__group-label {
+  padding-top: 2px;
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.ribbon__placeholder {
+  align-self: center;
+  max-width: 62ch;
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-size: var(--text-md);
+  color: var(--text-muted);
+}
+
+.ribbon__trailing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-left: 1px solid var(--divider);
+}
+
+/* Narrow screens: the ribbon loses its group captions before it loses any
+   commands, because a command you cannot reach is worse than one you have to
+   recognise by icon and tooltip. */
+@media (max-width: 1100px) {
+  .ribbon__group-label {
+    display: none;
+  }
+
+  .ribbon__row {
+    min-height: 54px;
+  }
+
+  .cmd--large {
+    min-width: 50px;
+    min-height: 46px;
+  }
+}

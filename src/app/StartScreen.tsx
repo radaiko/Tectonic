@@ -1,7 +1,18 @@
 import type { StoredSession } from '../io/DocumentStorage'
 import { Button } from '../ui/Button'
+import { Icon } from '../ui/Icon'
 import './StartScreen.css'
 
+/**
+ * Where a session begins.
+ *
+ * Deliberately close to empty. A CAD package's start screen has exactly two
+ * jobs — start something, or reopen something — and everything else it might
+ * carry (a gallery, a tip of the day, a sample part) is a thing between the
+ * user and the work. What it does owe them is an honest account of what was
+ * left behind: nothing here is written to disk on its own, so the recovery copy
+ * from the last session is the one piece of state worth the room.
+ */
 export interface StartScreenProps {
   readonly onNewDocument: () => void
   readonly onOpenFile: () => void
@@ -27,12 +38,36 @@ export function StartScreen({
     <main className="start">
       <div className="start__inner">
         <header className="start__brand">
-          <h1 className="start__wordmark">Tectonic</h1>
-          <p className="start__tagline">Parametric CAD in the browser</p>
+          <Icon name="kernel" size={22} className="start__mark" />
+          <div>
+            <h1 className="start__wordmark">Tectonic</h1>
+            <p className="start__tagline">Parametric CAD in the browser</p>
+          </div>
         </header>
 
+        <div className="start__actions">
+          <Button variant="primary" size="large" onClick={onNewDocument} disabled={busy}>
+            <span className="start__action-title">
+              <Icon name="file-new" size={16} />
+              New Document
+            </span>
+            <span className="start__action-sub">Start from an empty part with origin planes</span>
+          </Button>
+          <Button size="large" onClick={onOpenFile} disabled={busy}>
+            <span className="start__action-title">
+              <Icon name="folder-open" size={16} />
+              Open File
+            </span>
+            <span className="start__action-sub">Load an existing .tectonic document</span>
+          </Button>
+        </div>
+
+        {/* Below the actions, not above them. A recovered document is worth
+            offering and never worth blocking the way past — a user who came here
+            to start something new should not have to dismiss anything first. */}
         {recovery ? (
           <section className="start__recovery" aria-label="Recovered document">
+            <Icon name="warning" size={15} className="start__recovery-icon" />
             <p className="start__recovery-text">
               <strong>{recovery.document.metadata.name}</strong> was still open
               {recovery.dirty ? ' with unsaved changes' : ''}
@@ -53,16 +88,11 @@ export function StartScreen({
           </section>
         ) : null}
 
-        <div className="start__actions">
-          <Button variant="primary" size="large" onClick={onNewDocument} disabled={busy}>
-            <span className="start__action-title">New Document</span>
-            <span className="start__action-sub">Start from an empty part studio</span>
-          </Button>
-          <Button size="large" onClick={onOpenFile} disabled={busy}>
-            <span className="start__action-title">Open File</span>
-            <span className="start__action-sub">Load an existing .tectonic document</span>
-          </Button>
-        </div>
+        {busy ? (
+          <p className="start__status" role="status">
+            Starting the geometry kernel…
+          </p>
+        ) : null}
 
         {error ? (
           <p className="start__error" role="alert">

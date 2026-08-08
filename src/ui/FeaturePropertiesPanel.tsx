@@ -6,6 +6,7 @@ import { parameterFields } from '../features/domain/schema'
 import type { SelectionItem, SelectionKind } from '../view/selection'
 import { EMPTY_SELECTION, selectionIds } from '../view/selection'
 import { featureIcon } from './FeatureTreePanel'
+import { Icon } from './Icon'
 import './FeaturePropertiesPanel.css'
 
 /** A computed read-out the editor puts under the editable parameters. */
@@ -53,20 +54,24 @@ export function FeaturePropertiesPanel({
     [feature, onChange],
   )
 
+  // No heading of its own: the panel this sits in is a tab already called
+  // Feature, and a second "Properties" under it would be a title for a title.
   if (!feature) {
     return (
       <div className="properties">
-        <h2 className="properties__title">Properties</h2>
-        <p className="properties__empty">Select a feature to edit its parameters.</p>
+        <p className="properties__empty">
+          No feature is selected. Pick one from the browser or the timeline to edit its
+          parameters.
+        </p>
       </div>
     )
   }
 
   return (
     <div className="properties">
-      <h2 className="properties__title">Properties</h2>
       <p className="properties__feature">
-        <span aria-hidden="true">{featureIcon(feature.featureType)}</span> {feature.name}
+        <Icon name={featureIcon(feature.featureType)} size={15} />
+        {feature.name}
       </p>
 
       {feature.errorMessage ? (

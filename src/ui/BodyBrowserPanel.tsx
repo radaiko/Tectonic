@@ -3,6 +3,8 @@ import type { Body, Part } from '../domain/Document'
 import { triangleCount } from '../domain/MeshData'
 import type { SelectionItem } from '../view/selection'
 import { EMPTY_SELECTION, applyPick, selectionIncludes } from '../view/selection'
+import { Icon } from './Icon'
+import { IconButton } from './shell'
 import './BodyBrowserPanel.css'
 
 /**
@@ -32,10 +34,23 @@ export interface BodyBrowserPanelProps {
   readonly onSelectionChange?: (selection: readonly SelectionItem[]) => void
   /** Asks the editor to show a feature's parameters, e.g. on a group heading. */
   readonly onSelectFeature?: (featureId: string) => void
+  /**
+   * Bodies the viewport is currently not drawing.
+   *
+   * Visibility is a way of looking at the model, not a property of it: nothing
+   * here reaches the document, the history or a rebuild. Left out, every body
+   * shows and the toggles are not offered at all — which is what keeps this
+   * panel usable from anywhere that has a list of bodies and no viewport.
+   */
+  readonly hiddenIds?: ReadonlySet<string>
+  readonly onToggleVisibility?: (bodyId: string) => void
+  /** Hides everything except this body. The panel header offers the way back. */
+  readonly onIsolate?: (bodyId: string) => void
 }
 
 const NO_OWNERS: ReadonlyMap<string, string> = new Map()
 const NO_PARTS: readonly Part[] = []
+const NONE_HIDDEN: ReadonlySet<string> = new Set<string>()
 
 /** Bodies produced by one feature, in the order the rebuild made them. */
 interface BodyGroup {
@@ -52,6 +67,9 @@ export function BodyBrowserPanel({
   selection = EMPTY_SELECTION,
   onSelectionChange,
   onSelectFeature,
+  hiddenIds = NONE_HIDDEN,
+  onToggleVisibility,
+  onIsolate,
 }: BodyBrowserPanelProps): React.ReactElement {
   const groups = useMemo(
     () => groupByOwner(bodies, ownerByBody, featureName),
@@ -64,9 +82,19 @@ export function BodyBrowserPanel({
 
   const empty = bodies.length === 0 && parts.length === 0
 
+  const rowOf = (body: Body): React.ReactElement => (
+    <BodyRow
+      body={body}
+      selected={selectionIncludes(selection, { kind: 'body', bodyId: body.id })}
+      hidden={hiddenIds.has(body.id)}
+      onPick={pick}
+      {...(onToggleVisibility ? { onToggleVisibility } : {})}
+      {...(onIsolate ? { onIsolate } : {})}
+    />
+  )
+
   return (
-    <section className="bodies">
-      <h2 className="bodies__title">Bodies</h2>
+    <div className="bodies">
       {empty ? (
         <p className="bodies__empty">
           Nothing has been built yet. Sketch on a plane and extrude it to make the first body.
@@ -89,12 +117,8 @@ export function BodyBrowserPanel({
           )}
           <ul className="bodies__list" aria-label={`Bodies from ${group.label}`}>
             {group.bodies.map((body) => (
-              <li key={body.id}>
-                <BodyRow
-                  body={body}
-                  selected={selectionIncludes(selection, { kind: 'body', bodyId: body.id })}
-                  onPick={pick}
-                />
+              <li className="bodies__item" key={body.id}>
+                {rowOf(body)}
               </li>
             ))}
           </ul>
@@ -106,41 +130,75 @@ export function BodyBrowserPanel({
           <span className="bodies__group-title bodies__group-title--plain">{part.name}</span>
           <ul className="bodies__list" aria-label={`Bodies from ${part.name}`}>
             {part.bodies.map((body) => (
-              <li key={body.id}>
-                <BodyRow
-                  body={body}
-                  selected={selectionIncludes(selection, { kind: 'body', bodyId: body.id })}
-                  onPick={pick}
-                />
+              <li className="bodies__item" key={body.id}>
+                {rowOf(body)}
               </li>
             ))}
           </ul>
         </div>
       ))}
-    </section>
+    </div>
   )
 }
 
 interface BodyRowProps {
   readonly body: Body
   readonly selected: boolean
+  readonly hidden: boolean
   readonly onPick: (bodyId: string, extend: boolean) => void
+  readonly onToggleVisibility?: (bodyId: string) => void
+  readonly onIsolate?: (bodyId: string) => void
 }
 
-function BodyRow({ body, selected, onPick }: BodyRowProps): React.ReactElement {
+function BodyRow({
+  body,
+  selected,
+  hidden,
+  onPick,
+  onToggleVisibility,
+  onIsolate,
+}: BodyRowProps): React.ReactElement {
+  const classes = [
+    'bodies__row',
+    selected ? 'bodies__row--selected' : '',
+    hidden ? 'bodies__row--hidden' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
-    <button
-      type="button"
-      className={`bodies__row${selected ? ' bodies__row--selected' : ''}`}
-      aria-pressed={selected}
-      // The same modifier the viewport uses, so adding a second body to a
-      // selection is one gesture wherever it is done.
-      onClick={(event) => onPick(body.id, event.shiftKey || event.ctrlKey || event.metaKey)}
-    >
-      <span aria-hidden="true">◧</span>
-      <span className="bodies__name">{body.name}</span>
-      <span className="bodies__count">{triangleCount(body.mesh).toLocaleString()} tris</span>
-    </button>
+    <>
+      <button
+        type="button"
+        className={classes}
+        aria-pressed={selected}
+        // The same modifier the viewport uses, so adding a second body to a
+        // selection is one gesture wherever it is done.
+        onClick={(event) => onPick(body.id, event.shiftKey || event.ctrlKey || event.metaKey)}
+      >
+        <Icon name="body" size={14} />
+        <span className="bodies__name">{body.name}</span>
+        <span className="bodies__count">{triangleCount(body.mesh).toLocaleString()} tris</span>
+      </button>
+      {onIsolate ? (
+        <IconButton
+          className="bodies__action"
+          size="sm"
+          icon="isolate"
+          label={`Isolate ${body.name}`}
+          onClick={() => onIsolate(body.id)}
+        />
+      ) : null}
+      {onToggleVisibility ? (
+        <IconButton
+          className="bodies__action"
+          size="sm"
+          icon={hidden ? 'eye-off' : 'eye'}
+          label={`${hidden ? 'Show' : 'Hide'} ${body.name}`}
+          onClick={() => onToggleVisibility(body.id)}
+        />
+      ) : null}
+    </>
   )
 }
 

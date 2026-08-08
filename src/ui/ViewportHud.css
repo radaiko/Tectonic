@@ -1,0 +1,60 @@
+.hud {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 42ch;
+  /* Never takes a click meant for geometry. */
+  pointer-events: none;
+  user-select: none;
+}
+
+.hud__mode {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 var(--space-2);
+  height: var(--control-sm);
+  font-size: var(--text-md);
+  font-weight: 500;
+  color: var(--text);
+  background: rgba(20, 24, 28, 0.82);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(3px);
+}
+
+.hud__tool {
+  padding-left: var(--space-2);
+  font-weight: 400;
+  color: var(--text-secondary);
+  border-left: 1px solid var(--border);
+}
+
+.hud__line {
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--control-xs);
+  color: var(--text-secondary);
+  background: rgba(20, 24, 28, 0.82);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(3px);
+}
+
+.hud__line--hint {
+  color: var(--text-muted);
+}
+
+/* A field is armed and the viewport is ignoring everything else. This is the
+   one HUD state that has to be impossible to miss. */
+.hud__line--armed {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: rgba(16, 34, 48, 0.9);
+}

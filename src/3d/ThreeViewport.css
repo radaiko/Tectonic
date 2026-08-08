@@ -4,7 +4,7 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: #1a1d21;
+  background: var(--viewport-bg);
 }
 
 /*
@@ -36,26 +36,26 @@
  */
 .viewport__planes {
   position: absolute;
-  bottom: 0.75rem;
-  left: 0.75rem;
+  bottom: var(--space-2);
+  left: var(--space-2);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
-  max-width: calc(100% - 1.5rem);
+  gap: var(--space-1);
+  max-width: calc(100% - var(--space-4));
   pointer-events: none;
 }
 
 .viewport__plane {
   pointer-events: auto;
-  padding: 0.25rem 0.6rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 0.3rem;
-  background: rgb(20 23 26 / 82%);
+  height: var(--control-sm);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(20, 24, 28, 0.82);
   color: var(--text-secondary);
   font: inherit;
-  font-size: 0.75rem;
-  letter-spacing: 0.02em;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
@@ -91,34 +91,42 @@
 
 .viewport__planes-hint {
   margin: 0;
+  padding-left: var(--space-1);
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-sm);
 }
 
 /* The selection, as the accessibility tree can reach it. Sits opposite the
    plane legend so the two never fight for the same corner. */
+/* The selection as the accessibility tree can reach it — and, on screen, the
+   one place a pick can be taken back without hunting for it in the model.
+   Styled as a viewport overlay rather than as a panel: the inspector's
+   Selection tab is the panel, and two panels saying the same thing would be
+   one too many. Sits opposite the plane legend so the two never share a
+   corner. */
 .viewport__selection {
   position: absolute;
-  right: 0.75rem;
-  bottom: 0.75rem;
-  max-width: 16rem;
-  padding: 0.6rem 0.75rem;
+  right: var(--space-2);
+  bottom: var(--space-2);
+  max-width: 260px;
+  padding: var(--space-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: rgb(26 29 33 / 88%);
-  font-size: 0.78rem;
+  border-radius: var(--radius);
+  background: rgba(20, 24, 28, 0.86);
+  backdrop-filter: blur(3px);
+  font-size: var(--text-sm);
 }
 
 .viewport__selection-count {
-  margin: 0 0 0.5rem;
-  color: var(--text-dim);
+  margin: 0 0 var(--space-1);
+  color: var(--text-muted);
 }
 
 .viewport__selection-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
-  margin: 0 0 0.5rem;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-1);
   padding: 0;
   list-style: none;
 }
@@ -126,10 +134,11 @@
 .viewport__selection-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.15rem 0.45rem;
+  gap: var(--space-1);
+  height: var(--control-xs);
+  padding: 0 var(--space-2);
   border: 1px solid #4ec9b0;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: rgb(78 201 176 / 12%);
   color: #4ec9b0;
   font: inherit;
@@ -137,12 +146,17 @@
 }
 
 .viewport__selection-clear {
+  padding: 0;
   border: none;
   background: none;
-  color: var(--text-dim);
+  color: var(--text-muted);
   font: inherit;
-  text-decoration: underline;
   cursor: pointer;
+}
+
+.viewport__selection-clear:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 /* Present to a screen reader, absent on screen. */

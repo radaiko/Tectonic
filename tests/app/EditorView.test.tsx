@@ -73,7 +73,8 @@ describe('EditorView', () => {
 
     // The 3D surface is the default, and its panel is the feature tree.
     expect(screen.getByLabelText<HTMLInputElement>('Document name').value).toBe('Bracket')
-    expect(screen.getByText('Extrude 1')).toBeDefined()
+    const history = screen.getByRole('list', { name: 'Feature tree' })
+    expect(within(history).getByText('Extrude 1')).toBeDefined()
 
     // Parts and bodies stay listed once a sketch is opened, too.
     await openFirstSketch()
@@ -92,10 +93,11 @@ describe('EditorView', () => {
   it('reports part, body and triangle counts in the status bar', () => {
     render(<EditorView document={documentWithGeometry()} onSave={vi.fn()} onClose={vi.fn()} />)
 
-    expect(screen.getByText('1 parts')).toBeDefined()
-    expect(screen.getByText('1 bodies')).toBeDefined()
-    expect(screen.getByText('1 triangles')).toBeDefined()
-    expect(screen.getByText('mm')).toBeDefined()
+    const status = within(screen.getByLabelText('Document status'))
+    expect(status.getByText('1 part')).toBeDefined()
+    expect(status.getByText('1 body')).toBeDefined()
+    expect(status.getByText('1 triangle')).toBeDefined()
+    expect(status.getByText('mm')).toBeDefined()
   })
 
   it('says so when the document holds no bodies at all', async () => {
@@ -233,6 +235,9 @@ describe('multiple sketches', () => {
 
     const planes = screen.getByRole('group', { name: 'New sketch on plane' })
     await userEvent.click(within(planes).getByRole('button', { name: 'YZ' }))
+    // Picking a plane opens the sketch, so building on it means finishing first
+    // — which is exactly the round trip the ribbon models.
+    await userEvent.click(screen.getByRole('button', { name: 'Finish Sketch' }))
     await userEvent.click(screen.getByRole('button', { name: 'Extrude' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -290,7 +295,7 @@ describe('multiple sketches', () => {
     render(<EditorView document={bare} onSave={vi.fn()} onClose={vi.fn()} />)
 
     expect(screen.getByText('No sketches yet.')).toBeDefined()
-    expect(screen.getByText(/no sketches\. Add one from the panel/)).toBeDefined()
+    expect(screen.getByText(/no sketches\. Add one from the Browser/)).toBeDefined()
     expect(screen.getByRole('button', { name: 'Extrude' }).hasAttribute('disabled')).toBe(true)
   })
 })
@@ -306,8 +311,6 @@ describe('starting a sketch from the 3D surface', () => {
       <EditorView document={createDocument({ now: NOW })} onSave={vi.fn()} onClose={vi.fn()} />,
     )
 
-    await userEvent.click(screen.getByRole('button', { name: '3D' }))
-
     const planes = screen.getByRole('group', { name: 'New sketch on plane' })
     for (const plane of ['XY', 'XZ', 'YZ']) {
       const button = within(planes).getByRole('button', { name: plane })
@@ -316,15 +319,17 @@ describe('starting a sketch from the 3D surface', () => {
     expect(screen.getByRole('list', { name: 'Sketches' })).toBeDefined()
   })
 
-  it('has no header button that opens a sketch without naming one', () => {
+  it('has no top-level button that opens a sketch without naming one', () => {
     render(
       <EditorView document={createDocument({ now: NOW })} onSave={vi.fn()} onClose={vi.fn()} />,
     )
 
-    // The way in is the plane, the face or the sketch itself; the header keeps
-    // only the way back out.
+    // The way in is the plane, the face or the sketch itself. Nothing in the app
+    // bar or the modelling ribbon opens "the sketch surface" without asking
+    // which sketch, and the way out only exists once there is something to
+    // leave.
     expect(screen.queryByRole('button', { name: 'Sketch' })).toBeNull()
-    expect(screen.getByRole('button', { name: '3D' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'Finish Sketch' })).toBeNull()
     expect(drawing()).toBe(false)
   })
 
@@ -333,7 +338,6 @@ describe('starting a sketch from the 3D surface', () => {
       <EditorView document={createDocument({ now: NOW })} onSave={vi.fn()} onClose={vi.fn()} />,
     )
 
-    await userEvent.click(screen.getByRole('button', { name: '3D' }))
     const planes = screen.getByRole('group', { name: 'New sketch on plane' })
     await userEvent.click(within(planes).getByRole('button', { name: 'XZ' }))
 
@@ -352,8 +356,6 @@ describe('starting a sketch from the 3D surface', () => {
       <EditorView document={createDocument({ now: NOW })} onSave={vi.fn()} onClose={vi.fn()} />,
     )
 
-    await userEvent.click(screen.getByRole('button', { name: '3D' }))
-
     // Present and usable: the starter document already carries a sketch.
     const extrude = screen.getByRole('button', { name: 'Extrude' })
     expect(extrude.hasAttribute('disabled')).toBe(false)
@@ -361,8 +363,6 @@ describe('starting a sketch from the 3D surface', () => {
 
   it('reaches a face of a freshly built solid without leaving 3D', async () => {
     render(<EditorView document={documentWithGeometry()} onSave={vi.fn()} onClose={vi.fn()} />)
-
-    await userEvent.click(screen.getByRole('button', { name: '3D' }))
 
     const picker = await screen.findByLabelText<HTMLSelectElement>('Face to sketch on')
     const target = (within(picker).getAllByRole('option')[1] as HTMLOptionElement).value
@@ -378,8 +378,6 @@ describe('starting a sketch from the 3D surface', () => {
 
   it('still shows the feature tree alongside the sketch controls', async () => {
     render(<EditorView document={documentWithGeometry()} onSave={vi.fn()} onClose={vi.fn()} />)
-
-    await userEvent.click(screen.getByRole('button', { name: '3D' }))
 
     expect(screen.getByRole('list', { name: 'Feature tree' })).toBeDefined()
     expect(screen.getByRole('group', { name: 'New sketch on plane' })).toBeDefined()
@@ -428,8 +426,6 @@ describe('the history as one ordered list', () => {
 
   it('opens a sketch picked from the history', async () => {
     render(<EditorView document={createDocument({ now: NOW })} onSave={vi.fn()} onClose={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: '3D' }))
-
     await userEvent.click(within(historyList()).getByRole('button', { name: 'Sketch 1' }))
 
     expect(drawing()).toBe(true)

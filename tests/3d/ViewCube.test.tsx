@@ -33,6 +33,23 @@ describe('ViewCube', () => {
     expect(screen.getByRole('button', { name: 'Top' }).getAttribute('aria-pressed')).toBe('false')
   })
 
+  it('offers framing beside the named views, and only when it can do it', async () => {
+    const onFit = vi.fn()
+    const { rerender } = render(
+      <ViewCube orientation={orientationFor('isometric')} onSelect={vi.fn()} />,
+    )
+
+    // Left out, the button is not drawn rather than drawn dead.
+    expect(screen.queryByRole('button', { name: 'Fit' })).toBeNull()
+
+    rerender(
+      <ViewCube orientation={orientationFor('isometric')} onSelect={vi.fn()} onFit={onFit} />,
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Fit' }))
+
+    expect(onFit).toHaveBeenCalledOnce()
+  })
+
   it('asks for the orientation a standard-view button names', async () => {
     const onSelect = vi.fn()
     render(<ViewCube orientation={orientationFor('isometric')} onSelect={onSelect} />)

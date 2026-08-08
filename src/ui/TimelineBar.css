@@ -1,0 +1,99 @@
+.timeline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  height: var(--control-lg);
+  padding: 0 var(--space-2);
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+
+.timeline__label {
+  flex: none;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.timeline__summary {
+  font-size: var(--text-md);
+  color: var(--text-muted);
+}
+
+.timeline__list {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0 var(--space-2);
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.timeline__list::-webkit-scrollbar {
+  display: none;
+}
+
+.timeline__slot {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.timeline__step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control);
+  height: var(--control-sm);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.timeline__step:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.timeline__step--selected {
+  color: var(--text);
+  background: var(--selected);
+  border-color: var(--accent-line);
+}
+
+/* Rolled back: built later than where the bar stands, so it is not in the model
+   on screen. Dimmed rather than hidden — its place in the order is the point. */
+.timeline__step--rolled-back,
+.timeline__step--suppressed {
+  color: var(--text-disabled);
+}
+
+.timeline__step--hidden {
+  color: var(--text-disabled);
+}
+
+.timeline__step--error {
+  color: var(--error);
+}
+
+/* Where the build stops. A line rather than a handle: dragging it belongs to
+   the browser's slider, which has a label and a keyboard. */
+.timeline__rollbar {
+  width: 2px;
+  height: 20px;
+  margin: 0 3px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+
+.timeline--collapsed .timeline__label {
+  color: var(--text-disabled);
+}

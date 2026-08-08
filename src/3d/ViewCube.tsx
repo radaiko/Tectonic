@@ -22,6 +22,12 @@ export interface ViewCubeProps {
   readonly onSelect: (orientation: CameraOrientation, regionId: string) => void
   /** Half-width of the cube in SVG units. The viewBox is sized from it. */
   readonly size?: number
+  /**
+   * Puts the camera back on the whole model. Offered here because framing is a
+   * view command like choosing a named view, and this is where a user already
+   * looks for those. Left out, the button is not drawn rather than drawn dead.
+   */
+  readonly onFit?: () => void
 }
 
 /** Room around the cube for its longest diagonal, plus a little air. */
@@ -34,7 +40,12 @@ const QUICK_VIEWS: readonly StandardView[] = STANDARD_VIEWS.filter(
   (view) => view !== 'dimetric' && view !== 'trimetric',
 )
 
-export function ViewCube({ orientation, onSelect, size = 1 }: ViewCubeProps): React.ReactElement {
+export function ViewCube({
+  orientation,
+  onSelect,
+  size = 1,
+  onFit,
+}: ViewCubeProps): React.ReactElement {
   const svgRef = useRef<SVGSVGElement>(null)
   const cube = useMemo(() => projectViewCube(orientation, size), [orientation, size])
   const faces = useMemo(() => paintOrder(cube), [cube])
@@ -101,6 +112,16 @@ export function ViewCube({ orientation, onSelect, size = 1 }: ViewCubeProps): Re
             {standardViewLabel(view)}
           </button>
         ))}
+        {onFit ? (
+          <button
+            type="button"
+            className="viewcube__view viewcube__view--fit"
+            title="Frame the whole model (F)"
+            onClick={onFit}
+          >
+            Fit
+          </button>
+        ) : null}
       </div>
     </div>
   )

@@ -1,18 +1,18 @@
 .viewcube {
   position: absolute;
-  top: 0.6rem;
-  right: 0.6rem;
+  top: var(--space-2);
+  right: var(--space-2);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.35rem;
+  gap: var(--space-1);
   /* The scene keeps the pointer except where the widget actually is. */
   pointer-events: none;
 }
 
 .viewcube__svg {
-  width: 5.5rem;
-  height: 5.5rem;
+  width: 78px;
+  height: 78px;
   pointer-events: auto;
   cursor: pointer;
 }
@@ -50,27 +50,35 @@
 .viewcube__views {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.15rem;
+  gap: 1px;
   pointer-events: auto;
 }
 
 .viewcube__view {
-  padding: 0.15rem 0.4rem;
-  border: 1px solid #39414b;
-  border-radius: 3px;
-  background: rgba(26, 29, 33, 0.85);
+  height: var(--control-xs);
+  padding: 0 var(--space-2);
   font: inherit;
-  font-size: 0.65rem;
-  color: var(--text-muted, #8b949e);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background: rgba(20, 24, 28, 0.88);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .viewcube__view:hover {
-  color: #c9d1d9;
-  border-color: #5b6572;
+  color: var(--text);
+  border-color: var(--border-strong);
 }
 
 .viewcube__view[aria-pressed='true'] {
   color: #4ec9b0;
   border-color: #4ec9b0;
+}
+
+/* Framing is not one of the named orientations, so it takes the full width
+   under them rather than sitting in the grid pretending to be one. */
+.viewcube__view--fit {
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
 }

@@ -1,0 +1,7 @@
+.icon {
+  display: block;
+  flex: none;
+  /* Vector strokes stay put under the browser's own snapping; without this the
+     1.5-unit strokes shimmer as a panel scrolls. */
+  shape-rendering: geometricPrecision;
+}

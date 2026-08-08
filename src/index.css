@@ -1,23 +1,127 @@
+/**
+ * The design tokens the whole application is built from.
+ *
+ * Everything below is a decision made once: a CAD tool is a dense, long-session
+ * application, and the thing that makes one feel professional is not any single
+ * colour but the fact that every panel, rail and row agrees on the same handful
+ * of surfaces, the same 8px rhythm and the same three control heights. Rules
+ * elsewhere reach for these names rather than literals, so a change to the
+ * palette is a change in one place.
+ */
 :root {
-  --surface-base: #14171a;
-  --surface-raised: #1c2024;
-  --surface-hover: #262b31;
-  --border: #2c3238;
-  --border-strong: #3d454d;
-  --text-primary: #e8ecef;
-  --text-secondary: #b6bfc7;
-  --text-muted: #7d8892;
+  /* --- Surfaces ----------------------------------------------------------
+     Four steps, darkest at the back. The viewport is the deepest so the model
+     reads as the thing lit from behind the chrome; panels sit one step up;
+     elevated is for what floats over a panel (menus, palettes, the ribbon). */
+  --app-bg: #0f1214;
+  --viewport-bg: #14181c;
+  --panel: #1a1f24;
+  --panel-elevated: #21272e;
+  --panel-sunken: #14181c;
+
+  /* --- Lines -------------------------------------------------------------
+     Restrained on purpose: separators do the work that shadows would do in a
+     consumer UI, so they have to be visible without becoming a grid. */
+  --border: #2a3138;
+  --border-strong: #3a434c;
+  --divider: #232a30;
+
+  /* --- Text --------------------------------------------------------------- */
+  --text: #e6eaee;
+  --text-secondary: #b0bac3;
+  --text-muted: #7c8792;
+  --text-disabled: #5a636c;
+  --text-on-accent: #06111a;
+
+  /* --- Accent and state --------------------------------------------------- */
   --accent: #4d9bd9;
   --accent-hover: #66addf;
-  --danger: #dc6060;
+  --accent-quiet: rgba(77, 155, 217, 0.16);
+  --accent-line: rgba(77, 155, 217, 0.5);
+  --hover: #262d34;
+  --selected: rgba(77, 155, 217, 0.2);
+  --selected-strong: rgba(77, 155, 217, 0.32);
+  --pressed: #2e3740;
 
-  font-family:
+  --success: #57ab68;
+  --warning: #e3b341;
+  --warning-bg: #2b2418;
+  --error: #e35d5d;
+  --error-bg: #2c1b1b;
+  --info: #4d9bd9;
+
+  /* --- Spacing: one 8px rhythm, with 4px for inside a control -------------- */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* --- Radii: small. Large rounding is what makes chrome look like a card. - */
+  --radius-sm: 2px;
+  --radius: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  /* --- Control heights ---------------------------------------------------- */
+  --control-xs: 20px;
+  --control-sm: 24px;
+  --control: 28px;
+  --control-lg: 32px;
+
+  /* --- Chrome bands ------------------------------------------------------- */
+  --appbar-height: 36px;
+  --ribbon-tabs-height: 28px;
+  --ribbon-height: 66px;
+  --statusbar-height: 26px;
+  --panel-width: 264px;
+  --panel-width-right: 288px;
+
+  /* --- Typography --------------------------------------------------------- */
+  --font-ui:
     'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --text-xs: 10px;
+  --text-sm: 11px;
+  --text-md: 12px;
+  --text-lg: 13px;
+  --text-xl: 15px;
+  --text-2xl: 20px;
+  --tracking-wide: 0.08em;
+
+  /* --- Depth: used sparingly, only for what genuinely floats -------------- */
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-panel: 0 2px 10px rgba(0, 0, 0, 0.3);
+
+  /* --- Focus -------------------------------------------------------------- */
+  --focus-ring: 0 0 0 2px var(--app-bg), 0 0 0 3px var(--accent);
+
+  /* --- Compatibility ------------------------------------------------------
+     The names the pre-overhaul stylesheets were written against, kept as
+     aliases onto the tokens above. The editor shell uses the new names; the
+     satellite environments (assembly, sheet metal, motion, PMI and the rest)
+     still use these, and pointing them at the same palette is what keeps the
+     application one coherent product while they are migrated in turn. */
+  --surface-base: var(--app-bg);
+  --surface: var(--panel);
+  --surface-raised: var(--panel);
+  --surface-hover: var(--hover);
+  --text-primary: var(--text);
+  --text-dim: var(--text-muted);
+  --danger: var(--error);
+
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  line-height: 1.45;
   color-scheme: dark;
-  color: var(--text-primary);
-  background-color: var(--surface-base);
+  color: var(--text);
+  background-color: var(--app-bg);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 * {
@@ -30,4 +134,52 @@ body,
   width: 100%;
   height: 100%;
   margin: 0;
+  overflow: hidden;
+}
+
+/* One focus treatment for the entire application. Keyboard users get a ring on
+   everything; pointer users never see it, because every interactive element
+   here is already telling them what it is. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius);
+}
+
+/* Scrollbars sized to a dense UI rather than to a document. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 6px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-disabled);
+  background-clip: content-box;
+}
+
+/* Available to any component that has to put a label in the accessibility tree
+   without putting it on screen. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }

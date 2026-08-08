@@ -54,6 +54,16 @@ export interface SketchEditorProps {
    * down while the 3D view has the screen.
    */
   readonly active?: boolean
+  /**
+   * Whether to draw the tool palette.
+   *
+   * The shell puts the same sixteen tools in the sketch ribbon, where they get
+   * labels, groups and keyboard hints; drawing them here as well would be the
+   * one toolset twice, in two shapes, with two ways to tell which is active.
+   * The editor keeps the strip for anything that renders it on its own — the
+   * sketch tests, and any future surface with no ribbon over it.
+   */
+  readonly showToolbar?: boolean
 }
 
 interface Diagnostics {
@@ -97,6 +107,7 @@ export function SketchEditor({
   tool: controlledTool,
   onToolChange,
   active = true,
+  showToolbar = true,
 }: SketchEditorProps): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const frameRef = useRef<HTMLDivElement | null>(null)
@@ -469,22 +480,24 @@ export function SketchEditor({
   const constraints = [...model.constraints.values()]
 
   return (
-    <div className="sketch">
-      <div className="sketch__tools" role="toolbar" aria-label="Sketch tools">
-        {SKETCH_TOOLS.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            className={`sketch__tool${entry.id === toolId ? ' sketch__tool--active' : ''}`}
-            aria-pressed={entry.id === toolId}
-            aria-label={entry.label}
-            title={`${entry.label}${entry.shortcut ? ` (${entry.shortcut})` : ''} — ${entry.hint}`}
-            onClick={() => selectTool(entry.id)}
-          >
-            <ToolIcon tool={entry.id} />
-          </button>
-        ))}
-      </div>
+    <div className={`sketch${showToolbar ? '' : ' sketch--no-toolbar'}`}>
+      {showToolbar ? (
+        <div className="sketch__tools" role="toolbar" aria-label="Sketch tools">
+          {SKETCH_TOOLS.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              className={`sketch__tool${entry.id === toolId ? ' sketch__tool--active' : ''}`}
+              aria-pressed={entry.id === toolId}
+              aria-label={entry.label}
+              title={`${entry.label}${entry.shortcut ? ` (${entry.shortcut})` : ''} — ${entry.hint}`}
+              onClick={() => selectTool(entry.id)}
+            >
+              <ToolIcon tool={entry.id} />
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="sketch__frame" ref={frameRef}>
         <canvas

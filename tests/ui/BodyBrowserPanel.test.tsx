@@ -76,7 +76,7 @@ describe('BodyBrowserPanel', () => {
     const onSelectionChange = vi.fn()
     renderBrowser({ onSelectionChange })
 
-    await userEvent.click(screen.getByRole('button', { name: /Base/ }))
+    await userEvent.click(screen.getByRole('button', { name: /^Base/ }))
 
     const expected: SelectionItem = { kind: 'body', bodyId: 'body-1' }
     expect(onSelectionChange).toHaveBeenCalledWith([expected])
@@ -90,7 +90,7 @@ describe('BodyBrowserPanel', () => {
     // One session, so the held modifier is still held when the click lands.
     const user = userEvent.setup()
     await user.keyboard('{Shift>}')
-    await user.click(screen.getByRole('button', { name: /Boss/ }))
+    await user.click(screen.getByRole('button', { name: /^Boss/ }))
     await user.keyboard('{/Shift}')
 
     expect(onSelectionChange).toHaveBeenCalledWith([
@@ -102,8 +102,8 @@ describe('BodyBrowserPanel', () => {
   it('marks the picked body so the list and the scene agree', () => {
     renderBrowser({ selection: [{ kind: 'body', bodyId: 'body-2' }] })
 
-    expect(screen.getByRole('button', { name: /Boss/ }).getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByRole('button', { name: /Base/ }).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByRole('button', { name: /^Boss/ }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: /^Base/ }).getAttribute('aria-pressed')).toBe('false')
   })
 
   it('opens the feature that made a body from its heading', async () => {

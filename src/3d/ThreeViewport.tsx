@@ -153,6 +153,17 @@ export interface ThreeViewportProps {
    * mounted, so the bare-letter shortcuts stand down while the sketch has it.
    */
   readonly active?: boolean
+  /**
+   * Bumped by the shell to ask for a frame — the ribbon's Fit command.
+   *
+   * A counter rather than a callback ref because framing needs the camera and
+   * the controls, which live inside the renderer effect and are not built until
+   * a GPU device has been acquired. A number the shell increments is something
+   * this component can react to whenever it is ready, with no lifetime to
+   * co-ordinate; the initial value is deliberately ignored, so mounting does not
+   * override the automatic framing that puts the camera on the model.
+   */
+  readonly fitRequest?: number
 }
 
 /**
@@ -166,7 +177,7 @@ function sameHover(a: HoverTarget | null, b: HoverTarget | null): boolean {
   return selectionKey(a) === selectionKey(b)
 }
 
-const BACKGROUND = 0x1a1d21
+const BACKGROUND = 0x14181c
 const SURFACE = 0x4d9bd9
 const HIGHLIGHT = 0xef4444
 /** The wash over the planar face the pointer is on. */
@@ -241,6 +252,7 @@ export function ThreeViewport({
   onSelectionChange,
   pickable = DEFAULT_PICKABLE,
   active = true,
+  fitRequest = 0,
 }: ThreeViewportProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
@@ -969,6 +981,19 @@ export function ThreeViewport({
     updateHover(null)
   }, [meshes, updateHover])
 
+  /**
+   * The shell asked for a frame. Forced, unlike the automatic one a rebuild
+   * triggers: this only happens because someone pressed Fit, and answering "the
+   * model has not changed enough to be worth reframing" to that would be a
+   * button that does nothing.
+   */
+  const framedRequest = useRef(fitRequest)
+  useEffect(() => {
+    if (framedRequest.current === fitRequest) return
+    framedRequest.current = fitRequest
+    fitViewRef.current(true)
+  }, [fitRequest])
+
   // Which planes are on screen, and which one reads as chosen.
   useEffect(() => {
     planesRef.current?.setShown(originPlanes)
@@ -1074,6 +1099,10 @@ export function ThreeViewport({
       <ViewCube
         orientation={orientation}
         onSelect={(next) => applyOrientationRef.current(next)}
+        // Framing the model is a view command like picking a named view, so it
+        // belongs on the same widget rather than in a corner of its own. The
+        // bare F key does the same thing; this is the discoverable half.
+        onFit={() => fitViewRef.current(true)}
       />
 
       {/*

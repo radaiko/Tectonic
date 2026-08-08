@@ -1,66 +1,26 @@
 import { Fragment, useCallback, useMemo, useRef, useState } from 'react'
 import type { Feature } from '../features/domain/Feature'
-import { FeatureType } from '../features/domain/FeatureType'
+import type { FeatureType } from '../features/domain/FeatureType'
 import type { TimelineEntry } from '../features/domain/timeline'
 import { buildTimeline, isRolledBack, rollBarPosition } from '../features/domain/timeline'
 import type { FeatureTree } from '../features/FeatureTree'
 import type { SketchModel } from '../sketch/domain/SketchModel'
 import { describeSupport } from '../sketch/domain/SketchSupport'
+import { featureIconName } from './featureIcons'
+import type { IconName } from './Icon'
+import { Icon } from './Icon'
 import './FeatureTreePanel.css'
 
-/** The glyph each feature kind wears in the tree, in place of an icon set. */
-const ICONS: Record<FeatureType, string> = {
-  [FeatureType.Extrude]: '▣',
-  [FeatureType.Revolve]: '◐',
-  [FeatureType.Sweep]: '⌒',
-  [FeatureType.Loft]: '◇',
-  [FeatureType.CutExtrude]: '▨',
-  [FeatureType.CutRevolve]: '◑',
-  [FeatureType.CutSweep]: '⌒',
-  [FeatureType.CutLoft]: '◈',
-  [FeatureType.Fillet]: '◜',
-  [FeatureType.Chamfer]: '◺',
-  [FeatureType.Shell]: '⬚',
-  [FeatureType.Hole]: '◎',
-  [FeatureType.Rib]: '⊥',
-  [FeatureType.Draft]: '◿',
-  [FeatureType.Pattern]: '⁙',
-  [FeatureType.Mirror]: '⇄',
-  [FeatureType.Scale]: '⤢',
-  [FeatureType.Combine]: '⊕',
-  [FeatureType.Split]: '⊘',
-  [FeatureType.DirectEdit]: '✥',
-  [FeatureType.BaseFlange]: '⬓',
-  [FeatureType.EdgeFlange]: '⌐',
-  [FeatureType.MiterFlange]: '◣',
-  [FeatureType.Hem]: '⊃',
-  [FeatureType.Jog]: '⌇',
-  [FeatureType.Unfold]: '▭',
-  [FeatureType.Refold]: '▧',
-  [FeatureType.ExtrudeSurface]: '▱',
-  [FeatureType.RevolveSurface]: '◠',
-  [FeatureType.SweepSurface]: '∫',
-  [FeatureType.LoftSurface]: '◇',
-  [FeatureType.BoundarySurface]: '⬡',
-  [FeatureType.RuledSurface]: '≣',
-  [FeatureType.PatchSurface]: '⬠',
-  [FeatureType.OffsetSurface]: '⧅',
-  [FeatureType.ExtendSurface]: '⇥',
-  [FeatureType.TrimSurface]: '✂',
-  [FeatureType.UntrimSurface]: '↺',
-  [FeatureType.KnitSurface]: '⧓',
-  [FeatureType.SplitSurface]: '⧗',
-  [FeatureType.ThickenSurface]: '▤',
-  [FeatureType.StitchSurface]: '⧉',
+/**
+ * The icon a feature row shows.
+ *
+ * Re-exported from the shared map rather than kept here, so the tree, the ribbon
+ * and the inspector cannot end up drawing three different pictures of an
+ * extrude. The name is kept for the callers that already had it.
+ */
+export function featureIcon(type: FeatureType): IconName {
+  return featureIconName(type)
 }
-
-/** The icon a feature row shows. Exported so the properties panel matches it. */
-export function featureIcon(type: FeatureType): string {
-  return ICONS[type]
-}
-
-/** The glyph a sketch row wears, matching how features carry theirs. */
-const SKETCH_ICON = '✎'
 
 export interface FeatureTreePanelProps {
   readonly tree: FeatureTree
@@ -92,6 +52,16 @@ export interface FeatureTreePanelProps {
   readonly onRollBarChange?: (index: number) => void
   /** Fired by "Edit Parameters", which the editor turns into a panel focus. */
   readonly onEditParameters?: (featureId: string) => void
+  /**
+   * Whether to draw the panel's own title and count.
+   *
+   * Rendered inside the browser it is a collapsible section that already has
+   * both, and two headings reading "History" one above the other is the kind of
+   * duplication that comes from composing components without looking at the
+   * result. Rendered on its own — which is how it is tested, and how any surface
+   * without the shell around it would use it — the header is what names it.
+   */
+  readonly showHeader?: boolean
 }
 
 interface MenuState {
@@ -125,6 +95,7 @@ export function FeatureTreePanel({
   onRename,
   onRollBarChange,
   onEditParameters,
+  showHeader = true,
 }: FeatureTreePanelProps): React.ReactElement {
   const features = tree.features
   const draggedId = useRef<string | null>(null)
@@ -187,10 +158,12 @@ export function FeatureTreePanel({
 
   return (
     <div className="feature-tree" onClick={closeMenu}>
-      <div className="feature-tree__header">
-        <h2 className="feature-tree__title">History</h2>
-        <span className="feature-tree__count">{timeline.length}</span>
-      </div>
+      {showHeader ? (
+        <div className="feature-tree__header">
+          <h2 className="feature-tree__title">History</h2>
+          <span className="feature-tree__count">{timeline.length}</span>
+        </div>
+      ) : null}
 
       {timeline.length === 0 ? (
         <p className="feature-tree__empty">Nothing modelled yet.</p>
@@ -404,9 +377,7 @@ function SketchRow({
       <div className="feature-row__main">
         <span className="feature-row__disclosure feature-row__disclosure--leaf" />
 
-        <span className="feature-row__icon" aria-hidden="true">
-          {SKETCH_ICON}
-        </span>
+        <Icon name="sketch" size={13} className="feature-row__icon" />
 
         {renaming ? (
           <input
@@ -438,7 +409,7 @@ function SketchRow({
           aria-label={`${sketch.visible ? 'Hide' : 'Show'} ${sketch.name}`}
           onClick={onToggleVisibility}
         >
-          {sketch.visible ? '◉' : '◌'}
+          <Icon name={sketch.visible ? 'eye' : 'eye-off'} size={13} />
         </button>
       </div>
 
@@ -535,15 +506,17 @@ function FeatureRow({
             aria-expanded={expanded}
             onClick={onToggleExpand}
           >
-            {expanded ? '▾' : '▸'}
+            <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size={12} />
           </button>
         ) : (
           <span className="feature-row__disclosure feature-row__disclosure--leaf" />
         )}
 
-        <span className="feature-row__icon" aria-hidden="true">
-          {featureIcon(feature.featureType)}
-        </span>
+        <Icon
+          name={feature.suppressed ? 'suppressed' : featureIcon(feature.featureType)}
+          size={13}
+          className="feature-row__icon"
+        />
 
         {renaming ? (
           <input
@@ -583,7 +556,7 @@ function FeatureRow({
         <ul className="feature-row__children">
           {children.map((child) => (
             <li key={child.id} className="feature-row__child">
-              <span aria-hidden="true">{featureIcon(child.featureType)}</span> {child.name}
+              <Icon name={featureIcon(child.featureType)} size={12} /> {child.name}
             </li>
           ))}
         </ul>

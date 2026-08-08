@@ -179,7 +179,7 @@ describe('the rest of the properties panel', () => {
   it('asks for a selection when there is no feature', () => {
     render(<FeaturePropertiesPanel feature={null} />)
 
-    expect(screen.getByText('Select a feature to edit its parameters.')).toBeDefined()
+    expect(screen.getByText(/No feature is selected/)).toBeDefined()
   })
 
   it('pluralises the kind a field picks the way English does', () => {

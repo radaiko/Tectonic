@@ -1,267 +1,134 @@
+/**
+ * The editor shell: five fixed bands and one that takes everything left over.
+ *
+ * The viewport is the band that grows, and every other decision here follows
+ * from that — the chrome is sized in fixed pixels rather than in fractions, so
+ * making the window bigger makes the model bigger and nothing else.
+ */
 .editor {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* Explicitly one column that cannot exceed the window. Left implicit, the
+     column is max-content sized and the widest band — a full ribbon — pushes
+     the panels and the status bar off the right-hand edge. */
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
   width: 100%;
   height: 100%;
-  background: var(--surface-base);
-}
-
-.editor__bar {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0.9rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-raised);
-}
-
-.editor__brand {
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--text-primary);
-}
-
-/* An input rather than a label: the document title is edited in place. It is
-   styled to read as text until it is hovered or focused. */
-.editor__doc {
-  width: 16ch;
-  padding: 0.2rem 0.35rem;
-  font: inherit;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  outline: none;
-}
-
-.editor__doc:hover {
-  border-color: var(--border);
-}
-
-.editor__doc:focus {
-  color: var(--text-primary);
-  background: var(--surface-base);
-  border-color: var(--accent);
-}
-
-.editor__modified {
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.editor__spacer {
-  flex: 1;
-}
-
-.editor__surfaces {
-  display: flex;
-  gap: 0.25rem;
-  margin-right: 0.5rem;
+  overflow: hidden;
+  background: var(--app-bg);
 }
 
 .editor__body {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 260px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   min-height: 0;
 }
 
-.editor__panel {
-  display: flex;
-  flex-direction: column;
+/* The stage holds both surfaces stacked in one cell and the HUD over them.
+   Stacking rather than swapping is what lets the 3D scene keep its GPU state
+   while a sketch is open. */
+.editor__stage {
+  position: relative;
+  display: grid;
+  grid-template-areas: 'surface';
+  min-width: 0;
   min-height: 0;
-  padding: 0.9rem;
-  overflow: auto;
-  border-right: 1px solid var(--border);
-  background: var(--surface-raised);
+  background: var(--viewport-bg);
 }
 
-/* The feature tree takes the slack in the 3D surface, so the sketch controls
-   under it keep their natural height instead of being pushed out of reach. */
-.editor__panel-grow {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  margin-bottom: 0.9rem;
-}
-
-.editor__panel--right {
-  border-right: none;
-  border-left: 1px solid var(--border);
-}
-
-.editor__failures {
-  color: #f85149;
-}
-
-.editor__history {
-  display: flex;
-  gap: 0.25rem;
-  margin-left: 0.5rem;
-}
-
-/* Sits above the status bar rather than over the model: what it has to say is
-   worth reading, and never worth covering the part up for. */
-.editor__notice {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 1rem;
-  border-top: 1px solid var(--border);
-  background: #2b2418;
-  color: #e3b341;
-  font-size: 0.85rem;
-}
-
-.editor__notice-close {
-  margin-left: auto;
-  border: none;
-  background: none;
-  color: inherit;
-  font-size: 1.1rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-/* Which geometry engine the part came out of. Normally a quiet read-out; it
-   only draws attention to itself when the backend cannot do everything. */
-.editor__backend {
-  cursor: help;
-}
-
-.editor__backend--limited {
-  color: #e3b341;
-}
-
-.editor__panel-title {
-  margin: 0 0 0.75rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.editor__tree,
-.editor__tree ul {
-  margin: 0;
-  padding-left: 0.85rem;
-  list-style: none;
-}
-
-.editor__tree {
-  padding-left: 0;
-}
-
-.editor__node {
-  display: block;
-  padding: 0.2rem 0;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-}
-
-.editor__node--part {
-  color: var(--text-primary);
-  font-weight: 500;
-}
-
-.editor__node--sketch {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-  width: 100%;
-  padding: 0.25rem 0.4rem;
-  font: inherit;
-  font-size: 0.85rem;
-  text-align: left;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.editor__node--sketch:hover {
-  background: var(--surface-hover);
-}
-
-.editor__node--sketch[aria-pressed='true'] {
-  color: var(--text-primary);
-  border-color: var(--accent);
-}
-
-.editor__node-detail {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-
-.editor__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem;
-  margin: 0.75rem 0;
-}
-
-.editor__actions--stacked {
-  flex-direction: column;
-  align-items: stretch;
-}
-
-.editor__actions-label {
-  width: 100%;
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.editor__select {
-  width: 100%;
-  padding: 0.35rem 0.4rem;
-  font: inherit;
-  font-size: 0.8rem;
-  color: var(--text-primary);
-  background: var(--surface-base);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  outline: none;
-}
-
-.editor__select:focus-visible {
-  border-color: var(--accent);
-}
-
-.editor__note {
-  margin: 0;
-  font-size: 0.75rem;
-  line-height: 1.45;
-  color: var(--text-muted);
-}
-
-.editor__empty {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.editor__viewport {
+.editor__surface {
+  grid-area: surface;
   min-width: 0;
   min-height: 0;
 }
 
-.editor__status {
-  display: flex;
-  gap: 1.25rem;
-  padding: 0.35rem 0.9rem;
-  font-size: 0.72rem;
+.editor__surface[hidden] {
+  display: none;
+}
+
+.editor__empty {
+  margin: 0;
+  padding: var(--space-5);
+  font-size: var(--text-lg);
   color: var(--text-muted);
+  text-align: center;
+  align-self: center;
+  justify-self: center;
+}
+
+/* The way out of a sketch. It carries the accent because in sketch mode it is
+   the one thing the user is eventually going to want, and the ribbon full of
+   drawing tools beside it is deliberately quiet by comparison. */
+.editor__finish {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-lg);
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: 500;
+  color: var(--text-on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.editor__finish:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* Sits above the timeline rather than over the model: what it has to say is
+   worth reading, and never worth covering the part up for. */
+.editor__notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-md);
+  color: var(--warning);
+  background: var(--warning-bg);
   border-top: 1px solid var(--border);
-  background: var(--surface-raised);
+}
+
+.editor__notice span {
+  flex: 1;
+}
+
+.editor__notice-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  color: inherit;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.editor__notice-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Narrow windows give up panel width, never a panel. A browser you cannot
+   reach is a part you cannot navigate, and an inspector you cannot reach is a
+   feature you cannot edit — so both stay, and the viewport keeps a floor under
+   it rather than being squeezed to nothing. */
+@media (max-width: 900px) {
+  .editor__body {
+    grid-template-columns: auto minmax(280px, 1fr) auto;
+  }
+
+  .editor__body > .browser {
+    width: 180px;
+  }
+
+  .editor__body > .inspector {
+    width: 200px;
+  }
 }

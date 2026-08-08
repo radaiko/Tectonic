@@ -1,0 +1,72 @@
+.iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  flex: none;
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    background 90ms ease,
+    color 90ms ease,
+    border-color 90ms ease;
+}
+
+.iconbtn--md {
+  width: var(--control);
+  height: var(--control);
+}
+
+.iconbtn--sm {
+  width: var(--control-sm);
+  height: var(--control-sm);
+}
+
+.iconbtn--labelled {
+  width: auto;
+  padding: 0 var(--space-2);
+}
+
+.iconbtn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.iconbtn:active:not(:disabled) {
+  background: var(--pressed);
+}
+
+.iconbtn:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+.iconbtn--active {
+  color: var(--text);
+  background: var(--selected);
+  border-color: var(--accent-line);
+}
+
+.iconbtn--accent {
+  color: var(--text);
+  background: var(--accent-quiet);
+  border-color: var(--accent-line);
+}
+
+.iconbtn--accent:hover:not(:disabled) {
+  background: var(--selected-strong);
+}
+
+.iconbtn--danger:hover:not(:disabled) {
+  color: var(--error);
+  background: var(--error-bg);
+}
+
+.iconbtn__label {
+  white-space: nowrap;
+}

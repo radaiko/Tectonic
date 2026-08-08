@@ -1,0 +1,108 @@
+.appbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  height: var(--appbar-height);
+  padding: 0 var(--space-2);
+  background: var(--app-bg);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.appbar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-left: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.appbar__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--divider);
+}
+
+.appbar__doc {
+  width: 20ch;
+  height: var(--control-sm);
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-size: var(--text-lg);
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  outline: none;
+}
+
+.appbar__doc:hover {
+  border-color: var(--border);
+}
+
+.appbar__doc:focus {
+  background: var(--panel-sunken);
+  border-color: var(--accent);
+}
+
+.appbar__state {
+  flex: none;
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: help;
+}
+
+/* The one place unsaved work is stated. A dot rather than a colour change on
+   its own, so it survives being read at a glance and in greyscale. */
+.appbar__state--modified {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--warning);
+}
+
+.appbar__state--modified::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  background: currentColor;
+  border-radius: 50%;
+}
+
+.appbar__history {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--divider);
+}
+
+.appbar__spacer {
+  flex: 1;
+}
+
+.appbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+@media (max-width: 900px) {
+  .appbar__brand {
+    display: none;
+  }
+
+  .appbar__doc {
+    width: 12ch;
+  }
+}

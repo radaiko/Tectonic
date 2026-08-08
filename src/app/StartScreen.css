@@ -1,101 +1,138 @@
+/**
+ * No gradient wash, no hero card. The background is the same flat surface the
+ * editor uses, with one faint grid to say "this is a drawing tool" — anything
+ * more and the first screen of a CAD package promises a consumer app that the
+ * second screen then contradicts.
+ */
 .start {
   display: grid;
   place-items: center;
   width: 100%;
   height: 100%;
-  padding: 2rem;
-  background:
-    radial-gradient(120% 90% at 50% -10%, rgba(77, 155, 217, 0.14), transparent 60%),
-    var(--surface-base);
+  padding: var(--space-6);
+  background-color: var(--app-bg);
+  background-image:
+    linear-gradient(var(--divider) 1px, transparent 1px),
+    linear-gradient(90deg, var(--divider) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: center;
 }
 
 .start__inner {
   width: min(560px, 100%);
+  padding: var(--space-6);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
 }
 
 .start__brand {
-  margin-bottom: 2.75rem;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--divider);
+}
+
+.start__mark {
+  color: var(--accent);
 }
 
 .start__wordmark {
   margin: 0;
-  font-size: 3rem;
+  font-size: var(--text-2xl);
   font-weight: 600;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--text-primary);
+  color: var(--text);
 }
 
 .start__tagline {
-  margin: 0.6rem 0 0;
-  font-size: 0.9rem;
-  letter-spacing: 0.06em;
+  margin: 2px 0 0;
+  font-size: var(--text-md);
   color: var(--text-muted);
+}
+
+.start__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.start__action-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.start__action-sub {
+  display: block;
+  font-size: var(--text-md);
+  font-weight: 400;
+  line-height: 1.45;
+  opacity: 0.8;
 }
 
 .start__recovery {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
-  padding: 0.85rem 1rem;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  background: var(--panel-sunken);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--warning);
+  border-radius: var(--radius);
+}
+
+.start__recovery-icon {
+  color: var(--warning);
 }
 
 .start__recovery-text {
   flex: 1 1 16rem;
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-md);
   line-height: 1.5;
   color: var(--text-secondary);
 }
 
 .start__recovery-text strong {
-  color: var(--text-primary);
+  color: var(--text);
 }
 
 .start__recovery-actions {
   display: flex;
-  gap: 0.4rem;
+  gap: var(--space-1);
 }
 
-.start__actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}
-
-@media (max-width: 520px) {
-  .start__actions {
-    grid-template-columns: 1fr;
-  }
-}
-
-.start__action-title {
-  display: block;
-  font-size: 1.05rem;
-  font-weight: 600;
-}
-
-.start__action-sub {
-  display: block;
-  margin-top: 0.35rem;
-  font-size: 0.8rem;
-  font-weight: 400;
-  opacity: 0.75;
+.start__status {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-md);
+  color: var(--text-muted);
 }
 
 .start__error {
-  margin: 1.5rem 0 0;
-  padding: 0.7rem 0.9rem;
-  font-size: 0.85rem;
-  color: var(--danger);
-  background: rgba(220, 96, 96, 0.1);
-  border: 1px solid rgba(220, 96, 96, 0.35);
-  border-radius: 6px;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-md);
+  color: var(--error);
+  background: var(--error-bg);
+  border: 1px solid rgba(227, 93, 93, 0.35);
+  border-radius: var(--radius);
+}
+
+@media (max-width: 560px) {
+  .start__inner {
+    padding: var(--space-4);
+  }
+
+  .start__actions {
+    grid-template-columns: 1fr;
+  }
 }

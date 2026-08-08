@@ -38,23 +38,25 @@ import { SketchEditor } from '../sketch/SketchEditor'
 import type { SketchPlane } from '../sketch/domain/SketchSupport'
 import {
   ORIGIN_PLANES,
-  describeSupport,
   faceSupport,
   isOriginPlaneSupport,
   originPlaneSupport,
   sameSupport,
 } from '../sketch/domain/SketchSupport'
 import type { ToolId } from '../sketch/tools/SketchTool'
-import { SKETCH_TOOLS } from '../sketch/tools/registry'
-import { BodyBrowserPanel } from '../ui/BodyBrowserPanel'
-import { Button } from '../ui/Button'
+import { SKETCH_TOOLS, toolDefinition } from '../sketch/tools/registry'
+import { BrowserPanel } from '../ui/BrowserPanel'
 import type { Command } from '../ui/commands'
-import { FeaturePropertiesPanel } from '../ui/FeaturePropertiesPanel'
 import type { ComputedValue } from '../ui/FeaturePropertiesPanel'
-import { FeatureTreePanel } from '../ui/FeatureTreePanel'
-import { SectionControls } from '../ui/SectionControls'
+import { Icon } from '../ui/Icon'
+import { InspectorPanel } from '../ui/InspectorPanel'
+import { AppBar, IconButton, Ribbon, StatusBar } from '../ui/shell'
+import type { StatusItem } from '../ui/shell'
+import { TimelineBar } from '../ui/TimelineBar'
+import { ViewportHud } from '../ui/ViewportHud'
+import { modelWorkspaceTabs, sketchWorkspaceTabs } from '../ui/workspaces'
 import type { SectionState } from '../view/section'
-import { createSectionState, sectionPlanes } from '../view/section'
+import { createSectionState, sectionPlanes, setSectionMode } from '../view/section'
 import type { SelectionItem, SelectionKind } from '../view/selection'
 import { EMPTY_SELECTION } from '../view/selection'
 import { ExportDialog } from './ExportDialog'
@@ -63,7 +65,7 @@ import './EditorView.css'
 
 /**
  * Features reachable by a bare letter. Everything else in the tree is added
- * from the command palette, which is where the full list lives.
+ * from the ribbon or the command palette, which is where the full list lives.
  */
 const FEATURE_SHORTCUTS: Partial<Record<FeatureType, string>> = {
   [FeatureType.Extrude]: 'E',
@@ -82,6 +84,8 @@ const EMPTY_PLANES: readonly SketchPlane[] = []
 const EMPTY_FALLBACKS: readonly string[] = []
 /** Stands in for "nothing has been built yet", so no feature claims a parent. */
 const EMPTY_OWNERS: ReadonlyMap<string, string> = new Map()
+/** Nothing hidden. Shared so an untouched document never re-renders the browser. */
+const NONE_HIDDEN: ReadonlySet<string> = new Set<string>()
 /**
  * What a click can land on when no command has narrowed it: the origin planes
  * of an empty document, then faces, then edges. Faces first because they are by
@@ -206,11 +210,17 @@ export function EditorView({
   // Which sketch the sketch surface is editing and which one a new profile
   // feature will consume. Falls back to the first when the selection is stale.
   const [selectedSketchId, setSelectedSketchId] = useState<string | null>(null)
-  // Held here rather than inside the sketch editor so the palette can switch
-  // tools without the sketch having to be on screen already.
+  // Held here rather than inside the sketch editor so the ribbon and the palette
+  // can switch tools without the sketch having to be on screen already.
   const [sketchTool, setSketchTool] = useState<ToolId>('select')
   const [exportOpen, setExportOpen] = useState(false)
   const [faceTarget, setFaceTarget] = useState<string>('')
+  /**
+   * Which ribbon tab the modelling workspace is on. Remembered across a trip
+   * into a sketch, so finishing one puts the user back where they were rather
+   * than on whichever tab happens to be first.
+   */
+  const [workspaceTab, setWorkspaceTab] = useState('solid')
   /**
    * The last thing the editor had to tell the user about an action it did not
    * carry out the way they asked, or carried further than they asked. Held here
@@ -226,6 +236,18 @@ export function EditorView({
   // Cutting the model open is a way of looking at it, not a change to it, so it
   // lives here and never reaches the document or the history.
   const [section, setSection] = useState<SectionState>(() => createSectionState())
+  /**
+   * Bodies the viewport is not drawing.
+   *
+   * Like the section, this is a way of looking at the model rather than a
+   * property of it: it never reaches the document, the history or a rebuild, and
+   * a hidden body is still counted, still exported and still has its faces
+   * offered as sketch supports. Hiding is about what is in the way right now.
+   */
+  const [hiddenBodyIds, setHiddenBodyIds] = useState<ReadonlySet<string>>(NONE_HIDDEN)
+  const [timelineCollapsed, setTimelineCollapsed] = useState(false)
+  /** Bumped to ask the viewport to put the camera back on the whole model. */
+  const [fitRequest, requestFit] = useReducer((count: number) => count + 1, 0)
   /**
    * The selection field currently taking picks, and what it wants. Arming a
    * field narrows the viewport to that kind, which is the only way a
@@ -264,14 +286,30 @@ export function EditorView({
     () => [...staticBodies, ...modelledBodies],
     [modelledBodies, staticBodies],
   )
-  const meshes: MeshData[] = useMemo(() => allBodies.map((body) => body.mesh), [allBodies])
+  /**
+   * The bodies the viewport actually draws.
+   *
+   * Everything else — counts, exports, the face picker, the browser — works off
+   * `allBodies`, because hiding a body does not take it out of the document.
+   * Only the three index-aligned lists the scene is built from are filtered, and
+   * they are derived together so a hidden body cannot shift the ids out of step
+   * with the meshes.
+   */
+  const visibleBodies: readonly Body[] = useMemo(
+    () =>
+      hiddenBodyIds.size === 0
+        ? allBodies
+        : allBodies.filter((body) => !hiddenBodyIds.has(body.id)),
+    [allBodies, hiddenBodyIds],
+  )
+  const meshes: MeshData[] = useMemo(() => visibleBodies.map((body) => body.mesh), [visibleBodies])
   // Built from the same array, right here, so the two stay index-aligned. This
   // is what lets a click on a solid in the viewport name the face it landed on.
-  const bodyIds: string[] = useMemo(() => allBodies.map((body) => body.id), [allBodies])
-  const bodyNames: string[] = useMemo(() => allBodies.map((body) => body.name), [allBodies])
+  const bodyIds: string[] = useMemo(() => visibleBodies.map((body) => body.id), [visibleBodies])
+  const bodyNames: string[] = useMemo(() => visibleBodies.map((body) => body.name), [visibleBodies])
   const triangles = useMemo(
-    () => meshes.reduce((total, mesh) => total + triangleCount(mesh), 0),
-    [meshes],
+    () => allBodies.reduce((total, body) => total + triangleCount(body.mesh), 0),
+    [allBodies],
   )
 
   /** Faces a new sketch can be attached to. Empty until something is built. */
@@ -281,6 +319,12 @@ export function EditorView({
   const featureNameOf = useCallback(
     (featureId: string) => tree.getFeature(featureId)?.name,
     [tree],
+  )
+
+  /** How a body id reads on screen, so a selection chip never shows a raw id. */
+  const bodyNameOf = useCallback(
+    (bodyId: string) => allBodies.find((body) => body.id === bodyId)?.name,
+    [allBodies],
   )
 
   /**
@@ -304,7 +348,7 @@ export function EditorView({
    * on screen exactly while there is none. Once a solid exists it is the thing
    * to click — leaving three translucent quads across the middle of the scene
    * would put a hit target in front of every face behind them. Starting a
-   * sketch on a plane from then on goes through the sidebar, which never leaves.
+   * sketch on a plane from then on goes through the browser, which never leaves.
    */
   const visiblePlanes = useMemo(
     () => (allBodies.length === 0 ? ORIGIN_PLANES : EMPTY_PLANES),
@@ -531,20 +575,20 @@ export function EditorView({
     [allBodies, sketches, touch],
   )
 
-  /** The same, from the sidebar picker, whose value packs both ids into one string. */
-  const addFaceSketch = useCallback(
-    (target: string) => {
-      const face = parseFaceTarget(target)
-      if (!face) return
-      addSketchOnFace(face.bodyId, face.faceId)
-    },
-    [addSketchOnFace],
-  )
+  /** The same, from the browser's picker, whose value packs both ids into one string. */
+  const addFaceSketch = useCallback(() => {
+    const face = parseFaceTarget(faceTarget)
+    if (!face) return
+    addSketchOnFace(face.bodyId, face.faceId)
+  }, [addSketchOnFace, faceTarget])
 
   const selectSketch = useCallback((sketchId: string) => {
     setSelectedSketchId(sketchId)
     setSurface('sketch')
   }, [])
+
+  /** Leaves the sketch for the 3D view. The way out, matching the way in. */
+  const finishSketch = useCallback(() => setSurface('model'), [])
 
   const handleRenameSketch = useCallback(
     (sketchId: string, name: string) => {
@@ -573,6 +617,46 @@ export function EditorView({
     [sketches, touch],
   )
 
+  /* ---------------------------------------------------------------------- */
+  /* Body visibility                                                         */
+  /* ---------------------------------------------------------------------- */
+
+  const handleToggleBodyVisibility = useCallback((bodyId: string) => {
+    setHiddenBodyIds((current) => {
+      const next = new Set(current)
+      if (!next.delete(bodyId)) next.add(bodyId)
+      return next
+    })
+  }, [])
+
+  /** Hides everything except one body. The panel header offers the way back. */
+  const handleIsolateBody = useCallback(
+    (bodyId: string) => {
+      const others = allBodies.filter((body) => body.id !== bodyId).map((body) => body.id)
+      setHiddenBodyIds(new Set(others))
+      setNotice(
+        others.length === 0
+          ? 'That is the only body — there was nothing to isolate it from.'
+          : `Isolated ${allBodies.find((body) => body.id === bodyId)?.name ?? 'that body'}. Use Show all in the browser header to bring the rest back.`,
+      )
+    },
+    [allBodies],
+  )
+
+  const handleShowAllBodies = useCallback(() => setHiddenBodyIds(NONE_HIDDEN), [])
+
+  /**
+   * Opens the model up, or closes it again.
+   *
+   * A half section is the one everybody wants first, so that is what the command
+   * starts; the browser's Section panel is where the mode and the offsets are
+   * changed from there. Pressing it again puts the model back together, which is
+   * what makes it a toggle rather than a one-way trip into a dialog.
+   */
+  const handleToggleSection = useCallback(() => {
+    setSection((current) => setSectionMode(current, current.mode === 'off' ? 'half' : 'off'))
+  }, [])
+
   /**
    * An edit made inside the sketch editor.
    *
@@ -586,8 +670,6 @@ export function EditorView({
     const sketchId = activeSketch?.id ?? 'none'
     touch(`Edit ${activeSketch?.name ?? 'sketch'}`, { coalesceKey: `sketch:${sketchId}` })
   }, [activeSketch, touch])
-
-  const handleExtrude = useCallback(() => addFeature(FeatureType.Extrude), [addFeature])
 
   const showSketchTool = useCallback((tool: ToolId) => {
     setSketchTool(tool)
@@ -727,6 +809,47 @@ export function EditorView({
   )
 
   /* ---------------------------------------------------------------------- */
+  /* Ribbon                                                                  */
+  /* ---------------------------------------------------------------------- */
+
+  const drawing = surface === 'sketch'
+
+  const modelTabs = useMemo(
+    () =>
+      // `modelWorkspaceTabs` builds a list of commands; it does not run one. The
+      // rule cannot see that, so passing it `addFeature` — which reaches the
+      // document title through a ref, several calls down, when a button is
+      // actually pressed — reads to it as a ref being dereferenced during
+      // render. Every handler in this object is stored in a closure and invoked
+      // from a click, which is exactly where a ref is meant to be read.
+      // eslint-disable-next-line react-hooks/refs
+      modelWorkspaceTabs({
+        hasSketch: activeSketch !== null,
+        hasBodies: allBodies.length > 0,
+        missingCapabilities: missing,
+        backend,
+        onFeature: addFeature,
+        onExport: () => setExportOpen(true),
+        onSection: handleToggleSection,
+        sectionActive: section.mode !== 'off',
+      }),
+    [
+      activeSketch,
+      addFeature,
+      allBodies.length,
+      backend,
+      handleToggleSection,
+      missing,
+      section.mode,
+    ],
+  )
+
+  const sketchTabs = useMemo(
+    () => sketchWorkspaceTabs({ activeTool: sketchTool, onSelectTool: setSketchTool }),
+    [sketchTool],
+  )
+
+  /* ---------------------------------------------------------------------- */
   /* Commands and shortcuts                                                  */
   /* ---------------------------------------------------------------------- */
 
@@ -757,7 +880,8 @@ export function EditorView({
       },
       // No "show the sketch surface" counterpart: opening a sketch means naming
       // one, which the plane, face and sketch-tool commands below all do.
-      { id: 'view:model', title: 'Show 3D Surface', category: 'View', run: () => setSurface('model') },
+      { id: 'view:model', title: 'Finish Sketch', category: 'View', run: finishSketch },
+      { id: 'view:fit', title: 'Fit View', category: 'View', shortcut: 'F', run: requestFit },
       ...ORIGIN_PLANES.map((plane) => ({
         id: `sketch:new:${plane}`,
         title: `New Sketch on ${plane}`,
@@ -785,7 +909,7 @@ export function EditorView({
         run: () => addFeature(type),
       })),
     ],
-    [addFeature, addSketch, handleRedo, handleSave, handleUndo, onClose, showSketchTool],
+    [addFeature, addSketch, finishSketch, handleRedo, handleSave, handleUndo, onClose, showSketchTool],
   )
 
   useEffect(() => {
@@ -860,228 +984,233 @@ export function EditorView({
     surface,
   ])
 
+  /* ---------------------------------------------------------------------- */
+  /* Status bar                                                              */
+  /* ---------------------------------------------------------------------- */
+
+  const statusItems = useMemo<StatusItem[]>(() => {
+    const bodyCount = countBodies(document) + modelledBodies.length
+    const items: StatusItem[] = [
+      { id: 'parts', label: plural(document.parts.length, 'part') },
+      { id: 'bodies', label: plural(bodyCount, 'body', 'bodies') },
+      { id: 'triangles', label: plural(triangles, 'triangle') },
+      { id: 'units', label: document.metadata.units, title: 'The unit every length in this document is expressed in' },
+    ]
+    if (hiddenBodyIds.size > 0) {
+      items.push({
+        id: 'hidden',
+        label: `${hiddenBodyIds.size} hidden`,
+        icon: 'eye-off',
+        tone: 'warning',
+        title: 'Hidden bodies are still in the document, and still exported.',
+      })
+    }
+    if (selection.length > 0) {
+      items.push({ id: 'selection', label: `${selection.length} selected`, tone: 'accent' })
+    }
+    if (evaluation && evaluation.failures.length > 0) {
+      items.push({
+        id: 'failures',
+        label: plural(evaluation.failures.length, 'feature error'),
+        icon: 'warning',
+        tone: 'error',
+      })
+    }
+    return items
+  }, [document, evaluation, hiddenBodyIds, modelledBodies, selection, triangles])
+
   return (
     <div className="editor">
-      <header className="editor__bar">
-        <span className="editor__brand">Tectonic</span>
-        <input
-          className="editor__doc"
-          aria-label="Document name"
-          value={name}
-          onChange={(event) => handleRenameDocument(event.target.value)}
+      <AppBar
+        documentName={name}
+        onRenameDocument={handleRenameDocument}
+        modified={modified}
+        undoLabel={historyState.undo}
+        redoLabel={historyState.redo}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        actions={
+          <>
+            {onNewDocument ? (
+              <IconButton icon="file-new" label="New Document" showLabel onClick={onNewDocument} />
+            ) : null}
+            <IconButton icon="save" label="Save" showLabel title="Save (Ctrl+S)" onClick={handleSave} />
+            {/* No Export here: it is a command with a home already, in the
+                ribbon's Make group, and the same word on two buttons at once is
+                two things to choose between where there is only one action. */}
+            <IconButton icon="close" label="Close" tone="danger" onClick={onClose} />
+          </>
+        }
+      />
+
+      {/* One ribbon, two personalities. In 3D it offers the modelling
+          environments; the moment a sketch is open it becomes the sketch's own
+          toolset with the way out pinned to the right. That swap is the whole of
+          what makes sketching feel like a mode rather than a panel. */}
+      {drawing ? (
+        <Ribbon
+          // The modelling workspaces stay in the strip while drawing, so the
+          // shape of the application does not change under the user. Choosing
+          // one is a way out of the sketch as much as the Finish button is —
+          // wanting the Solid tab *is* wanting to be done drawing — so it
+          // closes the sketch rather than leaving a modelling ribbon hovering
+          // over a canvas that ignores it.
+          tabs={[...sketchTabs, ...modelTabs]}
+          activeTabId="sketch"
+          onTabChange={(id) => {
+            if (id === 'sketch') return
+            setWorkspaceTab(id)
+            finishSketch()
+          }}
+          label="Workspace"
+          commandsRole="toolbar"
+          commandsLabel="Sketch tools"
+          trailing={
+            <button type="button" className="editor__finish" onClick={finishSketch}>
+              <Icon name="sketch-finish" size={16} />
+              Finish Sketch
+            </button>
+          }
         />
-        <span className="editor__modified">{modified ? 'Modified' : 'Saved'}</span>
-        {/* Named rather than bare arrows: knowing *what* a click will take back
-            is the difference between using undo and being afraid of it. */}
-        <div className="editor__history" role="group" aria-label="Document history">
-          <Button
-            variant="ghost"
-            onClick={handleUndo}
-            disabled={historyState.undo === null}
-            title={historyState.undo ? `Undo ${historyState.undo}` : 'Nothing to undo'}
-          >
-            Undo
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={handleRedo}
-            disabled={historyState.redo === null}
-            title={historyState.redo ? `Redo ${historyState.redo}` : 'Nothing to redo'}
-          >
-            Redo
-          </Button>
-        </div>
-        <div className="editor__spacer" />
-        {/* Shown on both surfaces: building a feature drops the user in the 3D
-            view, and hiding the primary action there made the next step look
-            unavailable. Disabled — not absent — when there is no sketch. */}
-        <Button variant="primary" onClick={handleExtrude} disabled={activeSketch === null}>
-          Extrude
-        </Button>
-        {/* Only the way back. A sketch is *entered* by choosing what it sits on
-            — an origin plane or a planar face, in the viewport or the panel —
-            so a header button that opened "the sketch surface" without asking
-            which sketch was a second, contradictory way in. */}
-        <div className="editor__surfaces" role="group" aria-label="Editing surface">
-          <Button
-            variant={surface === 'model' ? 'primary' : 'ghost'}
-            aria-pressed={surface === 'model'}
-            onClick={() => setSurface('model')}
-          >
-            3D
-          </Button>
-        </div>
-        {onNewDocument ? (
-          <Button variant="ghost" onClick={onNewDocument}>
-            New Document
-          </Button>
-        ) : null}
-        <Button onClick={handleSave}>Save</Button>
-        <Button onClick={() => setExportOpen(true)}>Export</Button>
-        <Button variant="ghost" onClick={onClose}>
-          Close
-        </Button>
-      </header>
+      ) : (
+        <Ribbon
+          tabs={modelTabs}
+          activeTabId={workspaceTab}
+          onTabChange={setWorkspaceTab}
+          label="Workspace"
+        />
+      )}
 
       <div className="editor__body">
-        <aside className="editor__panel">
-          {/* The history holds the sketches as well as the features now, so it is
-              shown on both surfaces: which sketch you are drawing on, and where
-              it sits in the build, is as much a 2D question as a 3D one. */}
-          <div className="editor__panel-grow">
-            <FeatureTreePanel
-              tree={tree}
-              sketches={sketches}
-              selectedFeatureId={selectedFeatureId}
-              selectedSketchId={activeSketch?.id ?? null}
-              onSelect={setSelectedFeatureId}
-              onSelectSketch={selectSketch}
-              onRenameSketch={handleRenameSketch}
-              onToggleSketchVisibility={handleToggleSketchVisibility}
-              onReorder={handleReorder}
-              onReorderRefused={handleReorderRefused}
-              onToggleSuppress={handleToggleSuppress}
-              onDelete={handleDelete}
-              onRename={handleRename}
-              onRollBarChange={handleRollBar}
-            />
-          </div>
-
-          {/* Sketch sources sit outside the surface switch on purpose. Starting
-              a sketch is the one thing a user needs from the 3D view as much as
-              from the 2D one — and since every feature ends by switching to 3D,
-              keeping these here is what stops the build from dead-ending. */}
-          <h2 className="editor__panel-title">Sketches</h2>
-          {sketches.length === 0 ? (
-            <p className="editor__empty">No sketches yet.</p>
-          ) : (
-            <ul className="editor__tree" aria-label="Sketches">
-              {sketches.map((entry) => (
-                <li key={entry.id}>
-                  <button
-                    type="button"
-                    className="editor__node editor__node--sketch"
-                    aria-pressed={entry.id === activeSketch?.id}
-                    onClick={() => selectSketch(entry.id)}
-                  >
-                    <span>{entry.name}</span>
-                    <span className="editor__node-detail">{describeSupport(entry.support)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="editor__actions" role="group" aria-label="New sketch on plane">
-            <span className="editor__actions-label">New sketch on</span>
-            {ORIGIN_PLANES.map((plane) => (
-              <Button key={plane} onClick={() => addSketch(plane)}>
-                {plane}
-              </Button>
-            ))}
-          </div>
-
-          <div className="editor__actions editor__actions--stacked">
-            <span className="editor__actions-label">New sketch on a face</span>
-            {faceGroups.length === 0 ? (
-              <p className="editor__note">
-                No solid has been built yet, so there is no face to sketch on.
-              </p>
-            ) : (
-              <>
-                <select
-                  className="editor__select"
-                  aria-label="Face to sketch on"
-                  value={faceTarget}
-                  onChange={(event) => setFaceTarget(event.target.value)}
-                >
-                  <option value="">Choose a face…</option>
-                  {faceGroups.map((group) => (
-                    <optgroup key={group.bodyId} label={group.bodyName}>
-                      {group.faces.map((face) => (
-                        <option key={face.faceId} value={face.value}>
-                          {face.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-                <Button disabled={faceTarget === ''} onClick={() => addFaceSketch(faceTarget)}>
-                  Add face sketch
-                </Button>
-              </>
-            )}
-          </div>
-
-          {/* What the document holds right now, as solids rather than as
-              history — the modelled bodies under the feature that made each,
-              and the imported ones under their part. Shown on both surfaces:
-              it is what the document *is*, and that does not stop being true
-              because the user switched to the sketch. */}
-          <BodyBrowserPanel
-            bodies={modelledBodies}
-            parts={document.parts}
-            ownerByBody={evaluation?.ownerByBody ?? EMPTY_OWNERS}
-            featureName={featureNameOf}
-            selection={selection}
-            onSelectionChange={setSelection}
-            onSelectFeature={setSelectedFeatureId}
-          />
-
-          {/* Only worth offering once there is something to cut into. */}
-          {allBodies.length > 0 ? (
-            <SectionControls section={section} onChange={setSection} extent={sectionExtent} />
-          ) : null}
-        </aside>
+        <BrowserPanel
+          document={{ name, parts: document.parts }}
+          origin={{
+            planes: ORIGIN_PLANES,
+            activePlane,
+            onNewSketch: addSketch,
+          }}
+          sketches={{
+            sketches,
+            selectedId: activeSketch?.id ?? null,
+            onSelect: selectSketch,
+            onToggleVisibility: handleToggleSketchVisibility,
+            faceGroups,
+            faceTarget,
+            onFaceTargetChange: setFaceTarget,
+            onAddFaceSketch: addFaceSketch,
+          }}
+          bodies={{
+            bodies: modelledBodies,
+            ownerByBody: evaluation?.ownerByBody ?? EMPTY_OWNERS,
+            featureName: featureNameOf,
+            hiddenIds: hiddenBodyIds,
+            onToggleVisibility: handleToggleBodyVisibility,
+            onIsolate: handleIsolateBody,
+            onShowAll: handleShowAllBodies,
+          }}
+          history={{
+            tree,
+            selectedFeatureId,
+            onSelectFeature: setSelectedFeatureId,
+            onRenameSketch: handleRenameSketch,
+            onReorder: handleReorder,
+            onReorderRefused: handleReorderRefused,
+            onToggleSuppress: handleToggleSuppress,
+            onDelete: handleDelete,
+            onRename: handleRename,
+            onRollBarChange: handleRollBar,
+          }}
+          section={
+            allBodies.length > 0
+              ? { section, onChange: setSection, extent: sectionExtent }
+              : null
+          }
+          selection={selection}
+          onSelectionChange={setSelection}
+        />
 
         {/* Both surfaces stay mounted so switching keeps their state and the
-            3D viewport does not have to rebuild its scene. */}
-        <section className="editor__viewport" hidden={surface !== 'sketch'}>
-          {activeSketch ? (
-            <SketchEditor
-              model={activeSketch}
-              onChange={handleSketchEdit}
-              tool={sketchTool}
-              onToolChange={setSketchTool}
-              active={surface === 'sketch'}
+            3D viewport does not have to rebuild its scene. The HUD sits over
+            whichever one is showing, so it never has to be drawn twice. */}
+        <div className="editor__stage">
+          <section className="editor__surface" hidden={!drawing}>
+            {activeSketch ? (
+              <SketchEditor
+                model={activeSketch}
+                onChange={handleSketchEdit}
+                tool={sketchTool}
+                onToolChange={setSketchTool}
+                active={drawing}
+                // The ribbon above is the tool palette now. Leaving the editor's
+                // own strip on screen would be the same sixteen tools twice.
+                showToolbar={false}
+              />
+            ) : (
+              <p className="editor__empty">
+                This document has no sketches. Add one from the Browser to start drawing.
+              </p>
+            )}
+          </section>
+          <section className="editor__surface" hidden={drawing}>
+            <ThreeViewport
+              meshes={meshes}
+              bodyIds={bodyIds}
+              bodyNames={bodyNames}
+              active={!drawing}
+              originPlanes={visiblePlanes}
+              selectedPlane={activePlane}
+              onSelectPlane={addSketch}
+              onSelectFace={addSketchOnFace}
+              selection={selection}
+              onSelectionChange={setSelection}
+              pickable={pickable}
+              clipPlane={clipPlanes}
+              fitRequest={fitRequest}
             />
-          ) : (
-            <p className="editor__empty">
-              This document has no sketches. Add one from the panel to start drawing.
-            </p>
-          )}
-        </section>
-        <section className="editor__viewport" hidden={surface !== 'model'}>
-          <ThreeViewport
-            meshes={meshes}
-            bodyIds={bodyIds}
-            bodyNames={bodyNames}
-            active={surface === 'model'}
-            originPlanes={visiblePlanes}
-            selectedPlane={activePlane}
-            onSelectPlane={addSketch}
-            onSelectFace={addSketchOnFace}
-            selection={selection}
-            onSelectionChange={setSelection}
-            pickable={pickable}
-            clipPlane={clipPlanes}
-          />
-        </section>
+          </section>
 
-        <aside className="editor__panel editor__panel--right">
-          <FeaturePropertiesPanel
-            feature={selectedFeature}
-            computed={computed}
-            onChange={handleParameterChange}
-            selection={selection}
-            activePickKey={picking?.key ?? null}
-            onPickKindChange={handlePickKindChange}
+          <ViewportHud
+            mode={drawing ? 'sketch' : 'model'}
+            sketchName={activeSketch?.name}
+            toolLabel={drawing ? toolDefinition(sketchTool).label : undefined}
+            selectionCount={selection.length}
+            pickingKind={picking?.kind ?? null}
+            // Only the drawing tool's own hint. In 3D the origin legend along
+            // the bottom of the scene already says "click a plane to start a
+            // sketch", right where the planes are; repeating it up here would be
+            // the same sentence twice on one screen.
+            hint={drawing ? toolDefinition(sketchTool).hint : undefined}
           />
-        </aside>
+        </div>
+
+        <InspectorPanel
+          document={document}
+          stats={{
+            parts: document.parts.length,
+            bodies: countBodies(document) + modelledBodies.length,
+            triangles,
+          }}
+          backend={backend}
+          missingCapabilities={missing}
+          kernelFallbacks={kernelFallbacks}
+          feature={selectedFeature}
+          computed={computed}
+          onParameterChange={handleParameterChange}
+          activePickKey={picking?.key ?? null}
+          onPickKindChange={handlePickKindChange}
+          selection={selection}
+          onSelectionChange={setSelection}
+          bodyName={bodyNameOf}
+          sketch={activeSketch}
+          drawing={drawing}
+          onOpenSketch={selectSketch}
+          onToggleSketchVisibility={handleToggleSketchVisibility}
+        />
       </div>
 
       {notice ? (
         <div className="editor__notice" role="status">
+          <Icon name="warning" size={14} />
           <span>{notice}</span>
           <button
             type="button"
@@ -1089,32 +1218,38 @@ export function EditorView({
             aria-label="Dismiss notice"
             onClick={() => setNotice(null)}
           >
-            ×
+            <Icon name="close" size={14} />
           </button>
         </div>
       ) : null}
 
-      <footer className="editor__status">
-        <span>{document.parts.length} parts</span>
-        <span>{countBodies(document) + modelledBodies.length} bodies</span>
-        <span>{triangles.toLocaleString()} triangles</span>
-        <span>{document.metadata.units}</span>
-        {/* Which engine the geometry above actually came out of. A stub result
-            and a B-Rep result look alike on screen and are not alike at all, so
-            the backend is named rather than assumed. */}
-        <span
-          className={`editor__backend${missing.length > 0 ? ' editor__backend--limited' : ''}`}
-          title={backendTitle(backend, kernelFallbacks, missing)}
-        >
-          Kernel: {backend}
-          {missing.length > 0 ? ' (limited)' : ''}
-        </span>
-        {evaluation && evaluation.failures.length > 0 ? (
-          <span className="editor__failures">
-            {evaluation.failures.length} feature errors
+      <TimelineBar
+        tree={tree}
+        sketches={sketches}
+        selectedFeatureId={selectedFeatureId}
+        selectedSketchId={activeSketch?.id ?? null}
+        onSelectFeature={setSelectedFeatureId}
+        onSelectSketch={selectSketch}
+        collapsed={timelineCollapsed}
+        onToggleCollapsed={() => setTimelineCollapsed((collapsed) => !collapsed)}
+      />
+
+      <StatusBar
+        items={statusItems}
+        trailing={
+          // Which engine the geometry above actually came out of. A stub result
+          // and a B-Rep result look alike on screen and are not alike at all, so
+          // the backend is named rather than assumed.
+          <span
+            className={`statusbar__item${missing.length > 0 ? ' statusbar__item--warning' : ''}`}
+            title={backendTitle(backend, kernelFallbacks, missing)}
+          >
+            <Icon name="kernel" size={13} />
+            Kernel: {backend}
+            {missing.length > 0 ? ' (limited)' : ''}
           </span>
-        ) : null}
-      </footer>
+        }
+      />
 
       {/* Mounted only while it is on screen. Its source is the document as it
           stands right now, and composing that means serialising every sketch —
@@ -1131,6 +1266,11 @@ export function EditorView({
       ) : null}
     </div>
   )
+}
+
+/** "1 part", "2 parts" — a count that reads like English rather than like a log. */
+function plural(count: number, singular: string, many?: string): string {
+  return `${count.toLocaleString()} ${count === 1 ? singular : (many ?? `${singular}s`)}`
 }
 
 /**

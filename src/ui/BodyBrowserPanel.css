@@ -1,49 +1,42 @@
-.bodies {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.bodies__title {
-  margin: 0 0 0.5rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
 .bodies__empty {
   margin: 0;
-  font-size: 0.8rem;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-md);
+  line-height: 1.5;
   color: var(--text-muted);
 }
 
-.bodies__group {
-  margin-bottom: 0.5rem;
+.bodies__group + .bodies__group {
+  margin-top: var(--space-1);
 }
 
+/* The feature that made these bodies, as the way back to its parameters. */
 .bodies__group-title {
   display: block;
   width: 100%;
-  padding: 0.1rem 0;
-  border: 0;
-  background: none;
+  padding: 0 var(--space-2) 0 var(--space-4);
   font: inherit;
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
-  text-align: left;
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
+  text-align: left;
   color: var(--text-muted);
+  background: transparent;
+  border: none;
   cursor: pointer;
+  line-height: var(--control-xs);
 }
 
 .bodies__group-title:hover {
-  color: var(--text-primary);
+  color: var(--accent);
 }
 
 .bodies__group-title--plain {
   cursor: default;
+}
+
+.bodies__group-title--plain:hover {
+  color: var(--text-muted);
 }
 
 .bodies__list {
@@ -52,41 +45,72 @@
   list-style: none;
 }
 
-.bodies__row {
-  display: grid;
-  grid-template-columns: 1rem 1fr auto;
+.bodies__item {
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
-  width: 100%;
-  padding: 0.2rem 0.3rem;
-  border: 0;
-  border-radius: 4px;
-  background: none;
+}
+
+.bodies__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  height: var(--control-sm);
+  padding: 0 var(--space-2) 0 var(--space-5);
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--text-md);
+  color: var(--text-secondary);
   text-align: left;
-  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
   cursor: pointer;
 }
 
 .bodies__row:hover {
-  background: var(--surface-raised, rgba(255, 255, 255, 0.06));
+  color: var(--text);
+  background: var(--hover);
 }
 
-/* The same teal a picked body wears in the viewport, so the list and the
-   scene agree at a glance about what is selected. */
 .bodies__row--selected {
-  background: rgba(78, 201, 176, 0.18);
-  color: #4ec9b0;
+  color: var(--text);
+  background: var(--selected);
+  border-left-color: var(--accent);
+}
+
+.bodies__row--hidden .bodies__name {
+  color: var(--text-disabled);
+  font-style: italic;
 }
 
 .bodies__name {
   overflow: hidden;
-  white-space: nowrap;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bodies__count {
-  font-size: 0.7rem;
+  flex: 1;
+  font-size: var(--text-sm);
   color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.bodies__action {
+  flex: none;
+  opacity: 0;
+  transition: opacity 90ms ease;
+}
+
+.bodies__item:hover .bodies__action,
+.bodies__action:focus-visible {
+  opacity: 1;
+}
+
+/* A hidden body keeps its control on screen: it is the only way back, and it
+   would otherwise vanish the moment the pointer left the row. */
+.bodies__row--hidden ~ .bodies__action {
+  opacity: 1;
 }
