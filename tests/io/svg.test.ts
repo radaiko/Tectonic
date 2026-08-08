@@ -19,7 +19,7 @@ import {
   resolvePoint,
 } from '../../src/sketch/domain/builders'
 import { arcAngles, circleCenter, lineEnd, lineStart } from '../../src/sketch/domain/query'
-import type { ArcEntity, CircleEntity, LineEntity } from '../../src/sketch/domain/SketchEntity'
+import type { ArcEntity, LineEntity } from '../../src/sketch/domain/SketchEntity'
 import { ImportError } from '../../src/io/types'
 
 const SQUARE = `<?xml version="1.0"?>

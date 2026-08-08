@@ -177,7 +177,7 @@ describe('runProgressiveLoad', () => {
 
     const result = await runProgressiveLoad(loader, [NEAR, FAR], CAMERA)
 
-    expect(result.loaded.sort()).toEqual(['far', 'near'])
+    expect([...result.loaded].sort()).toEqual(['far', 'near'])
     expect(result.failed).toEqual([])
   })
 

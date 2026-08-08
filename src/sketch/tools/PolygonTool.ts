@@ -19,8 +19,11 @@ export class PolygonTool extends BaseTool {
   private center: Vec2 | null = null
   private cursor: Vec2 | null = null
 
-  constructor(private mode: PolygonMode = 'free') {
+  private mode: PolygonMode
+
+  constructor(mode: PolygonMode = 'free') {
     super()
+    this.mode = mode
   }
 
   setMode(mode: PolygonMode): void {

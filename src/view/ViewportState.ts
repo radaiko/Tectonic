@@ -139,9 +139,10 @@ export function updateViewport(
 ): MultiViewportState {
   if (index < 0 || index >= MAX_VIEWPORTS) return state
 
-  const cameraPatch: Partial<CameraPatch> = {}
+  const cameraPatch: { -readonly [K in keyof CameraPatch]?: CameraPatch[K] } = {}
   for (const key of CAMERA_KEYS) {
-    if (patch[key] !== undefined) cameraPatch[key] = patch[key] as never
+    const value = patch[key]
+    if (value !== undefined) cameraPatch[key] = value as never
   }
   const syncing = state.syncCameras && Object.keys(cameraPatch).length > 0
 

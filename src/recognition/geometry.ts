@@ -258,11 +258,6 @@ export function boundaryLoops(
 
 const ORIGIN: Vec3 = { x: 0, y: 0, z: 0 }
 
-function weldOrdinal(topology: MeshTopology, index: number): number {
-  const id = topology.vertexIdOf[index]
-  return topology.vertices.findIndex((vertex) => vertex.id === id)
-}
-
 /* ------------------------------------------------------------------ frames */
 
 /** A plane through `origin` with `normal`, with an arbitrary but stable basis. */
@@ -445,10 +440,12 @@ export function solve3(
   const determinant = determinant3(matrix)
   if (Math.abs(determinant) < 1e-12) return null
 
-  const column = (index: number): [readonly number[], readonly number[], readonly number[]] =>
-    matrix.map((row, rowIndex) =>
+  const column = (index: number): [readonly number[], readonly number[], readonly number[]] => {
+    const replaced = matrix.map((row, rowIndex) =>
       row.map((value, columnIndex) => (columnIndex === index ? (rhs[rowIndex] as number) : value)),
-    ) as [readonly number[], readonly number[], readonly number[]]
+    )
+    return [replaced[0] as number[], replaced[1] as number[], replaced[2] as number[]]
+  }
 
   return [
     determinant3(column(0)) / determinant,

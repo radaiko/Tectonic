@@ -17,8 +17,11 @@ export class ArcTool extends BaseTool {
   private readonly picks: Vec2[] = []
   private cursor: Vec2 | null = null
 
-  constructor(private mode: ArcMode = '3point') {
+  private mode: ArcMode
+
+  constructor(mode: ArcMode = '3point') {
     super()
+    this.mode = mode
   }
 
   setMode(mode: ArcMode): void {

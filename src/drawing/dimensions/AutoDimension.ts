@@ -72,7 +72,6 @@ export function autoDimension(
 ): Annotation[] {
   const style = options.style ?? DEFAULT_DIMENSION_STYLE
   const strategy = options.strategy ?? 'overall'
-  const scaleFactor = options.scaleFactor ?? 1
   const limit = options.maxDimensions ?? DEFAULT_MAX_DIMENSIONS
   const origin = options.origin ?? boundsCenter(geometry.bounds)
   const featureTolerance =

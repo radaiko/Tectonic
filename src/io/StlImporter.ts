@@ -58,7 +58,7 @@ export function importStl(
 
 export function importAsciiStl(text: string, options: StlImportOptions = {}): StlImportResult {
   const scale = options.scale ?? 1
-  const builder = new MeshBuilder({ weld: options.weld, tolerance: options.weldTolerance })
+  const builder = new MeshBuilder(meshBuilderOptions(options))
   const facetNormals: number[] = []
 
   const nameMatch = /^\s*solid[ \t]*([^\r\n]*)/.exec(text)
@@ -127,7 +127,7 @@ export function importBinaryStl(bytes: Uint8Array, options: StlImportOptions = {
     )
   }
 
-  const builder = new MeshBuilder({ weld: options.weld, tolerance: options.weldTolerance })
+  const builder = new MeshBuilder(meshBuilderOptions(options))
   const facetNormals: number[] = []
 
   let offset = STL_HEADER_BYTES + 4
@@ -168,4 +168,15 @@ function readHeaderName(bytes: Uint8Array): string {
     text += code >= 0x20 && code < 0x7f ? String.fromCharCode(code) : ' '
   }
   return text.replace(/^Tectonic STL /, '').trim()
+}
+
+/**
+ * `exactOptionalPropertyTypes` rules out passing an explicit `undefined`, so an
+ * option the caller left out has to become an absent key.
+ */
+function meshBuilderOptions(options: StlImportOptions): { tolerance?: number; weld?: boolean } {
+  return {
+    ...(options.weld === undefined ? {} : { weld: options.weld }),
+    ...(options.weldTolerance === undefined ? {} : { tolerance: options.weldTolerance }),
+  }
 }

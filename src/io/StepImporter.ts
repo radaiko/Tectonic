@@ -363,7 +363,7 @@ export function parseEntities(statements: readonly string[]): Map<number, StepEn
 /** The HEADER section's three standard entities, with sane fallbacks. */
 export function parseHeader(statements: readonly string[]): StepHeader {
   let inHeader = false
-  const calls = new Map<string, StepValue[]>()
+  const calls = new Map<string, readonly StepValue[]>()
 
   for (const statement of statements) {
     const keyword = statement.toUpperCase()
@@ -704,7 +704,10 @@ export function importStep(text: string, options: StepImportOptions = {}): StepI
     schema: detectSchema(header.schemas),
     entities,
     curves,
-    sketch: curvesToSketch(curves, plane, { name: options.name, scale }),
+    sketch: curvesToSketch(curves, plane, {
+      ...(options.name === undefined ? {} : { name: options.name }),
+      scale,
+    }),
     plane,
     units,
     unsupported,

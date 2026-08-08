@@ -7,7 +7,7 @@ import {
   readRecords,
   tokenizeDxf,
 } from '../../src/io/DxfImporter'
-import type { DxfArc, DxfCircle, DxfLine, DxfPolyline } from '../../src/io/DxfImporter'
+import type { DxfLine, DxfPolyline } from '../../src/io/DxfImporter'
 import { exportDxf } from '../../src/io/DxfExporter'
 import { SketchModel } from '../../src/sketch/domain/SketchModel'
 import {

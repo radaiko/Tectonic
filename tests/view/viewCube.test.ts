@@ -69,7 +69,7 @@ describe('orientationForRegion', () => {
 
   it('picks a non-degenerate up for a region on the Z pole', () => {
     // Faces never hit this branch; the guard is there for edges through a pole.
-    const polar = { ...(regionById('front-top') as never), direction: vec3(0, 0, 1), kind: 'edge' as const }
+    const polar = { ...regionById('front-top')!, direction: vec3(0, 0, 1), kind: 'edge' as const }
     expect(orientationForRegion(polar).up).toEqual({ x: 0, y: 1, z: 0 })
   })
 })
@@ -124,18 +124,18 @@ describe('paintOrder', () => {
 
 describe('containsPoint', () => {
   const cube = projectViewCube(orientationFor('front'), 40)
-  const face = cube.faces.find((candidate) => candidate.visible)
+  const face = cube.faces.find((candidate) => candidate.visible)!
 
   it('accepts the centre of the face', () => {
-    expect(containsPoint(face as never, 0, 0)).toBe(true)
+    expect(containsPoint(face, 0, 0)).toBe(true)
   })
 
   it('rejects a point outside it', () => {
-    expect(containsPoint(face as never, 500, 500)).toBe(false)
+    expect(containsPoint(face, 500, 500)).toBe(false)
   })
 
   it('rejects a degenerate polygon', () => {
-    expect(containsPoint({ ...(face as never), points: [] }, 0, 0)).toBe(false)
+    expect(containsPoint({ ...face, points: [] }, 0, 0)).toBe(false)
   })
 })
 

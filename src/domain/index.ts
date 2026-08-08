@@ -1,13 +1,13 @@
 export type {
   Body,
   DocumentMetadata,
-  Feature,
-  FeatureParameterValue,
   LengthUnit,
   NewDocumentOptions,
   Part,
   TectonicDocument,
 } from './Document'
+export type { Feature } from '../features/domain/Feature'
+export type { ParameterValue as FeatureParameterValue } from '../features/domain/parameters'
 export {
   TECTONIC_FORMAT_VERSION,
   countBodies,

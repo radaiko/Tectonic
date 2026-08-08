@@ -88,7 +88,7 @@ export interface MeshEdgeGraph {
 }
 
 /** Every unique edge of the mesh with the normals of the faces that share it. */
-export function meshEdges(mesh: MeshData, weldTolerance = DEFAULTS.weldTolerance): MeshEdgeGraph {
+export function meshEdges(mesh: MeshData, weldTolerance: number = DEFAULTS.weldTolerance): MeshEdgeGraph {
   const tolerance = weldTolerance > 0 ? weldTolerance : DEFAULTS.weldTolerance
   const vertexIds = new Map<string, number>()
   const vertices: MeshPoint[] = []

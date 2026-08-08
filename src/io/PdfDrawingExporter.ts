@@ -81,6 +81,10 @@ export function exportPdfDrawing(mesh: MeshData, options: PdfDrawingOptions = {}
   const date = options.date ?? new Date()
   const partName = options.partName ?? 'Untitled'
   const precision = options.precision ?? 3
+  // `exactOptionalPropertyTypes` rules out passing an explicit `undefined`, so
+  // an absent option has to be an absent key.
+  const sharpAngleOptions = options.sharpAngle === undefined ? {} : { sharpAngle: options.sharpAngle }
+  const authorOption = options.author === undefined ? {} : { author: options.author }
 
   const views = (options.views ?? ORTHO_VIEWS.map((view) => view.name)).map((name) => {
     const axes = ORTHO_VIEWS.find((candidate) => candidate.name === name) ?? ORTHO_VIEWS[0]
@@ -88,7 +92,7 @@ export function exportPdfDrawing(mesh: MeshData, options: PdfDrawingOptions = {}
   })
 
   const projections = views.map((view) => {
-    const segments = viewSegments(mesh, view, { sharpAngle: options.sharpAngle })
+    const segments = viewSegments(mesh, view, sharpAngleOptions)
     return { view, segments, bounds: segmentBounds(segments) }
   })
 
@@ -147,12 +151,12 @@ export function exportPdfDrawing(mesh: MeshData, options: PdfDrawingOptions = {}
     scale: formatScale(ratio),
     units,
     date,
-    author: options.author,
+    ...authorOption,
   })
 
   return buildPdf(content.toString(), {
     title: partName,
-    author: options.author,
+    ...authorOption,
     subject: `Orthographic drawing, scale ${formatScale(ratio)}`,
     creationDate: date,
   })
@@ -324,7 +328,7 @@ function drawTitleBlock(content: PdfContent, data: TitleBlockData): void {
     row: number,
     caption: string,
     value: string,
-    size = FONT_SIZE.value,
+    size: number = FONT_SIZE.value,
   ): void => {
     const cellX = x + columnWidth * column + 5
     const cellY = y + rowHeight * row

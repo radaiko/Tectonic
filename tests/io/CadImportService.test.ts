@@ -32,7 +32,7 @@ function ascii(text: string, length = text.length): Uint8Array {
 }
 
 /** A file starting with the given signature, then filler. */
-function signed(signature: readonly number[], filler = 64): Uint8Array {
+function signed(signature: readonly number[], filler = 64): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(signature.length + filler)
   bytes.set(signature, 0)
   return bytes

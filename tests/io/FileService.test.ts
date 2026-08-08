@@ -11,6 +11,7 @@ import {
 } from '../../src/io/FileService'
 import { TECTONIC_FORMAT_VERSION, createBody, createPart } from '../../src/domain/Document'
 import type { TectonicDocument } from '../../src/domain/Document'
+import { FeatureType } from '../../src/features/domain/FeatureType'
 
 const NOW = '2026-07-26T12:00:00.000Z'
 
@@ -31,9 +32,13 @@ function populatedDocument(): TectonicDocument {
       {
         id: 'feature-1',
         name: 'Extrude 1',
-        type: 'extrude',
-        suppressed: false,
+        featureType: FeatureType.Extrude,
+        sketchId: null,
         parameters: { distance: 10, symmetric: false, note: null },
+        status: 'active',
+        errorMessage: null,
+        parentFeatureIds: [],
+        childFeatureIds: [],
       },
     ],
   }

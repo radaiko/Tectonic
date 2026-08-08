@@ -64,10 +64,13 @@ function tokenize(source: string): Token[] {
 class Parser {
   private position = 0
 
-  constructor(
-    private readonly tokens: readonly Token[],
-    private readonly variables: Readonly<Record<string, number>>,
-  ) {}
+  private readonly tokens: readonly Token[]
+  private readonly variables: Readonly<Record<string, number>>
+
+  constructor(tokens: readonly Token[], variables: Readonly<Record<string, number>>) {
+    this.tokens = tokens
+    this.variables = variables
+  }
 
   private peek(): Token | undefined {
     return this.tokens[this.position]

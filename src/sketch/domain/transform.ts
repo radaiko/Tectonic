@@ -99,5 +99,5 @@ function remapIds(json: SketchEntityJSON, idMap: ReadonlyMap<string, string>): S
       )
     }
   }
-  return result as SketchEntityJSON
+  return result as unknown as SketchEntityJSON
 }

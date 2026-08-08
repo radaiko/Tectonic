@@ -397,7 +397,7 @@ describe('constraints and dimensions', () => {
     fireEvent.keyDown(screen.getByLabelText('Dimension value'), { key: 'Escape' })
 
     expect(screen.queryByLabelText('Dimension value')).toBeNull()
-    expect([...model.constraints.values()][0]?.value).toBe(100)
+    expect(([...model.constraints.values()][0] as LengthConstraint | undefined)?.value).toBe(100)
   })
 
   it('rejects a value that is not a number', () => {
@@ -410,7 +410,7 @@ describe('constraints and dimensions', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
 
     expect(screen.getByText('"wide" is not a number')).toBeDefined()
-    expect([...model.constraints.values()][0]?.value).toBe(100)
+    expect(([...model.constraints.values()][0] as LengthConstraint | undefined)?.value).toBe(100)
   })
 
   it('rejects an empty value', () => {
@@ -423,7 +423,7 @@ describe('constraints and dimensions', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
 
     expect(screen.getByText('"" is not a number')).toBeDefined()
-    expect([...model.constraints.values()][0]?.value).toBe(100)
+    expect(([...model.constraints.values()][0] as LengthConstraint | undefined)?.value).toBe(100)
   })
 
   it('puts back a value the sketch cannot satisfy', () => {
@@ -437,7 +437,7 @@ describe('constraints and dimensions', () => {
     fireEvent.change(input, { target: { value: '-40' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
-    expect([...model.constraints.values()][0]?.value).toBe(100)
+    expect(([...model.constraints.values()][0] as LengthConstraint | undefined)?.value).toBe(100)
     // The status bar shows the solver diagnostic in preference to the editor's
     // own message, so the rejection surfaces as the over-constrained report.
     expect(screen.getByText(/over-constrained/i)).toBeDefined()

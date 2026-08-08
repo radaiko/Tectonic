@@ -6,7 +6,16 @@ import type { WasmLoadOptions } from './wasm/WasmLoader'
 /** A backend that can be asked for, in the order `createKernel` tries them. */
 export type KernelBackend = 'rust' | 'opencascade' | 'stub'
 
-export interface CreateKernelOptions extends WasmLoadOptions, RustLoadOptions {
+/**
+ * Options for {@link createKernel}, flattening both loaders' settings.
+ *
+ * Each loader's own `importModule` seam is renamed on the way in: they stand in
+ * for different modules — occt-wasm and the generated Rust package — so a single
+ * shared name could only ever reach the wrong loader.
+ */
+export interface CreateKernelOptions
+  extends Omit<WasmLoadOptions, 'importModule'>,
+    Omit<RustLoadOptions, 'importModule'> {
   /**
    * Which backends to try, best first. Defaults to all three; narrowing it is
    * how a caller pins the backend — tests do, and so does a user who wants the
@@ -19,10 +28,29 @@ export interface CreateKernelOptions extends WasmLoadOptions, RustLoadOptions {
    * reason is logged.
    */
   readonly onFallback?: (reason: string, cause: unknown) => void
+  /** Seam for tests: stands in for the dynamic import of the occt-wasm module. */
+  readonly importOcctModule?: WasmLoadOptions['importModule']
+  /** Seam for tests: stands in for the dynamic import of the generated Rust module. */
+  readonly importRustModule?: RustLoadOptions['importModule']
   /** Seam for tests: stands in for the dynamic import of the OpenCascade kernel. */
   readonly importKernel?: () => Promise<{ create(options: WasmLoadOptions): Promise<IKernel> }>
   /** Seam for tests: stands in for the dynamic import of the Rust kernel. */
   readonly importRustKernel?: () => Promise<{ create(options: RustLoadOptions): Promise<IKernel> }>
+}
+
+/** What is left of {@link CreateKernelOptions} once the control fields are taken out. */
+type LoadOptions = Omit<
+  CreateKernelOptions,
+  'backends' | 'onFallback' | 'importKernel' | 'importRustKernel'
+>
+
+/**
+ * The two kernel-import seams as destructuring leaves them: always present, and
+ * undefined when the caller left them out.
+ */
+interface KernelSeams {
+  readonly importKernel: CreateKernelOptions['importKernel']
+  readonly importRustKernel: CreateKernelOptions['importRustKernel']
 }
 
 const DEFAULT_ORDER: readonly KernelBackend[] = ['rust', 'opencascade', 'stub']
@@ -66,18 +94,43 @@ const LABELS: Record<KernelBackend, string> = {
 
 async function start(
   backend: Exclude<KernelBackend, 'stub'>,
-  load: WasmLoadOptions & RustLoadOptions,
-  seams: Pick<CreateKernelOptions, 'importKernel' | 'importRustKernel'>,
+  load: LoadOptions,
+  seams: KernelSeams,
 ): Promise<IKernel> {
   if (backend === 'rust') {
     const module = seams.importRustKernel
       ? await seams.importRustKernel()
       : (await import('./RustKernel')).RustKernel
-    return module.create(load)
+    return module.create(rustOptions(load))
   }
 
   const module = seams.importKernel
     ? await seams.importKernel()
     : (await import('./OpenCascadeKernel')).OpenCascadeKernel
-  return module.create(load)
+  return module.create(occtOptions(load))
+}
+
+/**
+ * The subsets each loader understands.
+ *
+ * Handing the whole set to both would be quietly wrong: only one backend's
+ * fields mean anything to a given loader, and the two import seams point at
+ * different modules. Absent fields are left off rather than passed as
+ * `undefined`, which `exactOptionalPropertyTypes` treats as a value.
+ */
+function occtOptions(load: LoadOptions): WasmLoadOptions {
+  const { onProgress, wasmUrl, importOcctModule } = load
+  return {
+    ...(onProgress !== undefined && { onProgress }),
+    ...(wasmUrl !== undefined && { wasmUrl }),
+    ...(importOcctModule !== undefined && { importModule: importOcctModule }),
+  }
+}
+
+function rustOptions(load: LoadOptions): RustLoadOptions {
+  const { wasmBinary, importRustModule } = load
+  return {
+    ...(wasmBinary !== undefined && { wasmBinary }),
+    ...(importRustModule !== undefined && { importModule: importRustModule }),
+  }
 }

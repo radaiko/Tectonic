@@ -172,7 +172,7 @@ export function parsePathData(data: string): SubPath[] {
           break
         }
         case 'T': {
-          const control = lastQuadraticControl ? reflect(current, lastQuadraticControl) : current
+          const control: Vec2 = lastQuadraticControl ? reflect(current, lastQuadraticControl) : current
           const target = point(value(0), value(1))
           segments.push({ kind: 'quadratic', from: current, control, to: target })
           lastQuadraticControl = control

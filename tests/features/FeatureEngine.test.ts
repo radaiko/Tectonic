@@ -33,7 +33,7 @@ describe('FeatureEngine', () => {
     const result = await evaluate(treeOf(extrude(sketch, 25)), [sketch])
 
     expect(result.bodies).toHaveLength(1)
-    expect(extentOf((result.bodies[0] as { mesh: never }).mesh)).toEqual({ x: 20, y: 10, z: 25 })
+    expect(extentOf(result.bodies[0]!.mesh)).toEqual({ x: 20, y: 10, z: 25 })
     expect(result.outcomes[0]?.featureName).toBe('Extrude 1')
     expect(result.outcomes[0]?.error).toBeNull()
   })
@@ -89,8 +89,8 @@ describe('FeatureEngine', () => {
     feature.setParameters({ distance: 50 })
     const after = await evaluate(tree, [sketch], kernel)
 
-    expect(extentOf((before.bodies[0] as { mesh: never }).mesh).z).toBe(25)
-    expect(extentOf((after.bodies[0] as { mesh: never }).mesh).z).toBe(50)
+    expect(extentOf(before.bodies[0]!.mesh).z).toBe(25)
+    expect(extentOf(after.bodies[0]!.mesh).z).toBe(50)
   })
 
   it('follows a dependency chain, cutting what an earlier feature built', async () => {
@@ -111,7 +111,7 @@ describe('FeatureEngine', () => {
     expect(result.failures).toEqual([])
     expect(result.bodies).toHaveLength(1)
     // The pocket leaves the outer size alone but adds the hole's walls.
-    expect(extentOf((result.bodies[0] as { mesh: never }).mesh)).toEqual({ x: 40, y: 40, z: 20 })
+    expect(extentOf(result.bodies[0]!.mesh)).toEqual({ x: 40, y: 40, z: 20 })
   })
 
   it('repeats a body with a rectangular pattern', async () => {
@@ -128,7 +128,7 @@ describe('FeatureEngine', () => {
     const result = await evaluate(tree, [sketch])
 
     expect(result.bodies).toHaveLength(1)
-    expect(extentOf((result.bodies[0] as { mesh: never }).mesh).x).toBe(60)
+    expect(extentOf(result.bodies[0]!.mesh).x).toBe(60)
   })
 
   it('mirrors a body into a second one when the copies are kept apart', async () => {
@@ -147,7 +147,7 @@ describe('FeatureEngine', () => {
 
     expect(result.bodies).toHaveLength(2)
     expect(result.bodiesByFeature.get('mirror-1')).toHaveLength(1)
-    expect(extentOf((result.bodies[1] as { mesh: never }).mesh).x).toBe(20)
+    expect(extentOf(result.bodies[1]!.mesh).x).toBe(20)
   })
 
   it('skips suppressed features and everything behind the roll bar', async () => {

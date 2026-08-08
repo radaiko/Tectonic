@@ -29,7 +29,7 @@ import type {
   SurfaceNaming,
   SurfaceSweepOrientation,
 } from './types'
-import { SURFACE_TOLERANCE, SurfaceError } from './types'
+import { SurfaceError } from './types'
 
 /**
  * Building surfaces from curves.

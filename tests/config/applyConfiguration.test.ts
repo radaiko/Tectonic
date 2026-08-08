@@ -142,11 +142,11 @@ describe('applyConfiguration', () => {
     // Only a hand-edited file can get here, so build the state directly.
     const restored = ConfigurationTable.fromJSON({
       ...table.toJSON(),
-      parameters: table
-        .toJSON()
-        .parameters.map((parameter) =>
-          parameter.id === 'depth' ? { ...parameter, kind: ParameterKind.FeatureParameter, parameterKey: undefined } : parameter,
-        ),
+      parameters: table.toJSON().parameters.map((parameter) => {
+        if (parameter.id !== 'depth') return parameter
+        const { parameterKey: _lost, ...withoutKey } = parameter
+        return { ...withoutKey, kind: ParameterKind.FeatureParameter }
+      }),
     })
     const report = applyConfiguration(restored, configId, { sketches: [sketch], tree })
     expect(report.skipped).toContainEqual({ parameterId: 'depth', reason: 'No parameter key' })

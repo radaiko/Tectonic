@@ -99,7 +99,11 @@ export const CONSTRAINT_ICONS: Readonly<Record<string, string>> = {
  * renderer usable from React, from tests and (later) from an offscreen export.
  */
 export class SketchRenderer {
-  constructor(private readonly ctx: CanvasRenderingContext2D) {}
+  private readonly ctx: CanvasRenderingContext2D
+
+  constructor(ctx: CanvasRenderingContext2D) {
+    this.ctx = ctx
+  }
 
   render(model: SketchModel, options: RenderOptions): RenderLayout {
     const { ctx } = this

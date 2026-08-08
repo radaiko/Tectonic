@@ -26,7 +26,7 @@ export interface BuildOptions {
   readonly isConstruction?: boolean
 }
 
-function isExistingPoint(ref: PointRef): ref is { pointId: string } {
+function isExistingPoint(ref: PointRef): ref is { readonly pointId: string } {
   return 'pointId' in ref
 }
 

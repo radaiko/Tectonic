@@ -336,8 +336,8 @@ describe('buildWeldment', () => {
 
     const square = await buildWeldment(kernel, frame())
     const mitered = await buildWeldment(kernel, frame('miter'))
-    const squareBounds = await kernel.boundingBox((square[0] as { shape: never }).shape)
-    const miterBounds = await kernel.boundingBox((mitered[0] as { shape: never }).shape)
+    const squareBounds = await kernel.boundingBox(square[0]!.shape)
+    const miterBounds = await kernel.boundingBox(mitered[0]!.shape)
 
     expect(miterBounds.max.x).toBeLessThanOrEqual(squareBounds.max.x)
     expect(miterBounds.min.x).toBeGreaterThanOrEqual(squareBounds.min.x)

@@ -54,7 +54,10 @@ export function exportThreeMf(
   source: MeshData | NamedMesh | readonly NamedMesh[],
   options: ThreeMfExportOptions = {},
 ): Uint8Array {
-  return writeZip(threeMfEntries(source, options), { modified: options.modified })
+  return writeZip(
+    threeMfEntries(source, options),
+    options.modified === undefined ? {} : { modified: options.modified },
+  )
 }
 
 /** The three package members, in the order a reader expects to find them. */

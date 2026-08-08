@@ -4,7 +4,6 @@ import { signedArea } from '../../src/library/polygon'
 import {
   StructuralProfile,
   alignmentOffset,
-  baseSection,
   placeSection,
   profileArea,
   profileCentroid,

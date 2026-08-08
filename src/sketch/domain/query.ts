@@ -1,7 +1,7 @@
 import type { Vec2 } from './geometry'
 import { distance, midpoint, normalizeAngle, pointOnCircle, sub, angleOf } from './geometry'
 import type { SketchModel } from './SketchModel'
-import type { ArcEntity, CircleEntity, LineEntity, SketchEntity } from './SketchEntity'
+import type { ArcEntity, CircleEntity, EllipseEntity, LineEntity, SketchEntity } from './SketchEntity'
 import { isPoint } from './SketchEntity'
 
 /** Resolved positions of every point an entity is built from, in order. */
@@ -30,7 +30,10 @@ export function lineLength(model: SketchModel, line: LineEntity): number {
   return distance(lineStart(model, line), lineEnd(model, line))
 }
 
-export function circleCenter(model: SketchModel, circle: CircleEntity | ArcEntity): Vec2 {
+export function circleCenter(
+  model: SketchModel,
+  circle: CircleEntity | ArcEntity | EllipseEntity,
+): Vec2 {
   return model.requirePoint(circle.centerPointId)
 }
 

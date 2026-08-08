@@ -543,7 +543,7 @@ function materialResourceBlock(name: string, material: MaterialSpec): Uint8Array
   bits.writeU32(MATERIAL_ALL)
   for (const channel of [r, g, b]) bits.writeF32(channel * 0.25)
   for (const channel of [r, g, b]) bits.writeF32(channel)
-  for (const channel of [r, g, b]) bits.writeF32(specular)
+  for (let index = 0; index < 3; index += 1) bits.writeF32(specular)
   for (let index = 0; index < 3; index += 1) bits.writeF32(0)
   bits.writeF32(material.metallic ?? 0)
   bits.writeF32(material.opacity ?? 1)
